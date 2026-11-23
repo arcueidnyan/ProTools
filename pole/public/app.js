@@ -10,7 +10,7 @@ const fonts = ['Manrope', 'Golos Text', 'PT Serif', 'Comfortaa', 'IBM Plex Mono'
 const palette = { violet: 'Сиреневый', green: 'Зелёный', peach: 'Персиковый', blue: 'Голубой', white: 'Белый' }
 const labels = { note: 'Стикер', text: 'Текст', rect: 'Прямоугольник', ellipse: 'Овал' }
 const gridStep = 24
-const shortcuts = { KeyV: 'select', KeyH: 'pan', KeyN: 'note', KeyT: 'text', KeyR: 'rect', KeyO: 'ellipse' }
+const shortcuts = { KeyV: 'select', KeyH: 'pan', KeyN: 'note', KeyT: 'text', KeyR: 'rect', KeyO: 'ellipse', KeyC: 'connect' }
 
 const viewOptions = { grid: true, snapGrid: false, snapItems: true }
 const viewOptionsKey = 'pole.viewOptions'
@@ -47,7 +47,12 @@ viewMenu.addEventListener('keydown', event => {
 
 let list = []
 let board
-let selected
+let selected = new Set()
+let selectedConnection
+let connectionStart
+let connectionStyle = 'straight'
+const connectionLayer = byId('connections')
+const marquee = byId('marquee')
 let tool = 'select'
 let space = false
 let drag
@@ -69,8 +74,10 @@ async function api(path = '', options) {
 const write = (path, method, data) => api(path, {
   method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
 })
-const item = () => board?.items.find(value => value.id === selected)
-const snapshot = () => structuredClone({ title: board.title, items: board.items })
+const item = () => selected.size === 1 ? board?.items.find(value => selected.has(value.id)) : undefined
+const connection = () => board?.connections.find(value => value.id === selectedConnection)
+const newId = () => globalThis.crypto?.randomUUID?.() || 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2)
+const snapshot = () => structuredClone({ title: board.title, items: board.items, connections: board.connections })
 function checkpoint() {
   history.push(snapshot())
   if (history.length > 80) history.shift()
@@ -87,7 +94,9 @@ function undo(redo = false) {
   if (busy || drag || !from.length) return
   to.push(snapshot())
   Object.assign(board, from.pop())
-  if (!item()) selected = undefined
+  selected = new Set(board.items.filter(value => selected.has(value.id)).map(value => value.id))
+  if (!connection()) selectedConnection = undefined
+  connectionStart = undefined
   title.value = board.title
   changed()
   renderItems()
@@ -191,9 +200,12 @@ if (matchMedia('(max-width:660px)').matches) setSidebar(false)
 
 function activate(value) {
   board = value
+  if (board) board.connections ??= []
   failure = undefined
   dirty = false
-  selected = undefined
+  selected = new Set()
+  selectedConnection = undefined
+  connectionStart = undefined
   drag = undefined
   showGuides()
   history = []
@@ -293,23 +305,132 @@ function renderItems() {
     const content = document.createElement('div')
     content.className = 'content'
     el.append(content)
-    if (value.id === selected) {
-      el.classList.add('selected')
-      const handle = document.createElement('span')
-      handle.className = 'resize'
-      el.append(handle)
-    }
     drawItem(el, value)
     elements.append(el)
   }
   world.replaceChildren(elements)
+  renderSelection()
+  renderConnections()
+}
+function renderSelection() {
+  for (const el of world.children) {
+    const id = el.dataset.id
+    const active = selected.has(id)
+    el.classList.toggle('selected', active)
+    el.classList.toggle('connection-start', id === connectionStart)
+    el.setAttribute('aria-pressed', String(active))
+    const handle = el.querySelector('.resize')
+    if (active && selected.size === 1) {
+      if (handle) continue
+      const resize = document.createElement('span')
+      resize.className = 'resize'
+      el.append(resize)
+    } else {
+      handle?.remove()
+    }
+  }
 }
 function select(id) {
-  selected = id
-  renderItems()
+  selectItems(new Set(id ? [id] : []))
+}
+function selectItems(ids) {
+  selected = ids
+  const hadConnection = Boolean(selectedConnection)
+  selectedConnection = undefined
+  renderSelection()
+  if (hadConnection) renderConnections()
   renderInspector()
 }
+function svg(tag, attributes = {}) {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', tag)
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value)
+  return element
+}
+function edge(value, dx, dy) {
+  const nx = dx / (value.w / 2), ny = dy / (value.h / 2)
+  const scale = value.kind === 'ellipse' ? Math.hypot(nx, ny) : Math.max(Math.abs(nx), Math.abs(ny))
+  return {
+    x: value.x + value.w / 2 + (scale ? dx / scale : 0),
+    y: value.y + value.h / 2 + (scale ? dy / scale : 0)
+  }
+}
+function renderConnections() {
+  const items = new Map((board?.items || []).map(value => [value.id, value]))
+  const defs = svg('defs')
+  for (const [id, color] of [['arrow-tip', '#625e76'], ['arrow-tip-selected', '#6746d2']]) {
+    const marker = svg('marker', { id, markerWidth: 8, markerHeight: 8, refX: 7, refY: 4,
+      orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse', viewBox: '0 0 8 8' })
+    marker.append(svg('path', { d: 'M0 0 L8 4 L0 8 Z', fill: color }))
+    defs.append(marker)
+  }
+  const elements = document.createDocumentFragment()
+  elements.append(defs)
+  for (const link of board?.connections || []) {
+    const from = items.get(link.from), to = items.get(link.to)
+    if (!from || !to) continue
+    const dx = to.x + to.w / 2 - from.x - from.w / 2
+    const dy = to.y + to.h / 2 - from.y - from.h / 2
+    const a = edge(from, dx || (!dy ? 1 : 0), dy)
+    const b = edge(to, -dx || (!dy ? -1 : 0), -dy)
+    const stepX = (b.x - a.x) / 3, stepY = (b.y - a.y) / 3
+    const bend = Math.min(80, Math.hypot(stepX, stepY)) / (Math.hypot(dx, dy) || 1)
+    const cx = stepX - dy * bend, cy = stepY + dx * bend
+    const path = link.style === 'curved'
+      ? `M${a.x} ${a.y} C${a.x + cx} ${a.y + cy} ${b.x - stepX - dy * bend} ${b.y - stepY + dx * bend} ${b.x} ${b.y}`
+      : `M${a.x} ${a.y} L${b.x} ${b.y}`
+    const active = selectedConnection === link.id
+    const group = svg('g', { class: active ? 'connection selected' : 'connection',
+      'data-connection': link.id, tabindex: 0, role: 'button', 'aria-label': 'Стрелка между объектами' })
+    const tip = active ? 'url(#arrow-tip-selected)' : 'url(#arrow-tip)'
+    const line = svg('path', { class: 'connection-line', d: path, 'marker-end': tip })
+    if (link.style === 'double') line.setAttribute('marker-start', tip)
+    if (link.style === 'dashed') line.setAttribute('stroke-dasharray', '6 5')
+    group.append(line, svg('path', { class: 'connection-hit', d: path }))
+    elements.append(group)
+  }
+  connectionLayer.replaceChildren(elements)
+}
+function selectLink(id) {
+  selected = new Set()
+  selectedConnection = id
+  renderSelection()
+  renderConnections()
+  renderInspector()
+}
+function connectTo(id) {
+  if (!id || id === connectionStart) {
+    connectionStart = undefined
+  } else if (!connectionStart) {
+    connectionStart = id
+  } else {
+    checkpoint()
+    const link = { id: newId(), from: connectionStart, to: id, style: connectionStyle }
+    board.connections.push(link)
+    setTool('select')
+    selectLink(link.id)
+    changed()
+    return
+  }
+  renderSelection()
+  renderInspector()
+}
+byId('connection-style').onchange = event => {
+  const value = connection()
+  if (value) {
+    checkpoint()
+    value.style = event.target.value
+    renderConnections()
+    changed()
+  }
+  connectionStyle = event.target.value
+}
 function renderInspector() {
+  const link = connection()
+  byId('connection-panel').hidden = !board || (tool !== 'connect' && !link)
+  byId('connection-style').value = link?.style || connectionStyle
+  byId('connection-hint').textContent = tool === 'connect'
+    ? (connectionStart ? 'Выберите конечный объект' : 'Выберите начальный объект') : ''
+  byId('delete-connection').hidden = !link
   const value = item()
   byId('inspector').hidden = !value
   if (!value) return
@@ -361,16 +482,25 @@ sizeField.onchange = () => {
 }
 byId('close-inspector').onclick = () => select()
 function remove() {
-  if (!item() || busy) return
+  if ((!selected.size && !connection()) || busy || drag) return
   checkpoint()
-  board.items = board.items.filter(value => value.id !== selected)
+  board.items = board.items.filter(value => !selected.has(value.id))
+  board.connections = board.connections.filter(link =>
+    link.id !== selectedConnection && !selected.has(link.from) && !selected.has(link.to))
   select()
+  renderItems()
   changed()
 }
-byId('delete-item').onclick = remove
+byId('delete-item').onclick = byId('delete-connection').onclick = remove
 
 function setTool(next) {
+  if (drag) return
+  const resetStart = Boolean(connectionStart)
+  connectionStart = undefined
   tool = next
+  if (next === 'connect') select()
+  else if (resetStart) renderSelection()
+  renderInspector()
   viewport.dataset.tool = next
   viewport.dataset.add = String(Boolean(labels[next]))
   for (const button of document.querySelectorAll('[data-tool].tool')) {
@@ -382,7 +512,7 @@ byId('undo').onclick = () => undo()
 byId('redo').onclick = () => undo(true)
 function updateCamera() {
   const { x, y, k } = camera
-  world.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')'
+  connectionLayer.style.transform = world.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')'
   viewport.style.backgroundSize = gridStep * k + 'px ' + gridStep * k + 'px'
   viewport.style.backgroundPosition = x + 'px ' + y + 'px'
   byId('zoom-reset').textContent = Math.round(k * 100) + '%'
@@ -419,6 +549,7 @@ byId('fit').onclick = fit
 viewport.addEventListener('wheel', event => {
   if (!board) return
   event.preventDefault()
+  if (drag) return
   const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1
   if (event.ctrlKey || event.metaKey) {
     const rect = viewport.getBoundingClientRect()
@@ -433,12 +564,12 @@ const coordinate = value => Math.min(1e7, Math.max(-1e7, value))
 const dimension = value => Math.max(28, Math.min(5000, value))
 const snapGrid = value => viewOptions.snapGrid ? Math.round(value / gridStep) * gridStep : value
 
-function snapAxis(position, offsets, axis, extent, value) {
+function snapAxis(position, offsets, axis, extent) {
   if (!viewOptions.snapItems) return { position: snapGrid(position) }
   let best
   let distance = 7 / camera.k
   for (const other of board.items) {
-    if (other.id === value.id) continue
+    if (selected.has(other.id)) continue
     const start = other[axis]
     const size = other[extent]
     for (const guide of [start, start + size / 2, start + size]) {
@@ -465,7 +596,7 @@ function addAt(event) {
   const rect = viewport.getBoundingClientRect()
   const kind = tool
   const value = {
-    id: globalThis.crypto?.randomUUID?.() || 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    id: newId(),
     kind, x: coordinate(snapGrid((event.clientX - rect.left - camera.x) / camera.k)),
     y: coordinate(snapGrid((event.clientY - rect.top - camera.y) / camera.k)),
     w: kind === 'text' ? 250 : 200, h: kind === 'text' ? 75 : kind === 'note' ? 170 : 115,
@@ -474,26 +605,66 @@ function addAt(event) {
   }
   checkpoint()
   board.items.push(value)
+  renderItems()
   setTool('select')
   select(value.id)
   changed()
   textField.focus({ preventScroll: true })
 }
+function updateMarquee(event) {
+  const box = viewport.getBoundingClientRect()
+  const left = Math.min(drag.sx, event.clientX) - box.left
+  const top = Math.min(drag.sy, event.clientY) - box.top
+  const width = Math.abs(event.clientX - drag.sx)
+  const height = Math.abs(event.clientY - drag.sy)
+  Object.assign(marquee.style, {
+    left: left + 'px', top: top + 'px', width: width + 'px', height: height + 'px'
+  })
+  marquee.hidden = false
+  const ids = new Set(drag.initial)
+  const x = (left - camera.x) / camera.k, y = (top - camera.y) / camera.k
+  for (const value of board.items) {
+    if (value.x <= x + width / camera.k && value.x + value.w >= x &&
+        value.y <= y + height / camera.k && value.y + value.h >= y) ids.add(value.id)
+  }
+  selectItems(ids)
+}
 viewport.onpointerdown = event => {
   if (!board || busy || drag || ![0, 1].includes(event.button)) return
-  const target = event.target.closest('.item')
-  if (!space && event.button === 0 && labels[tool]) {
+  const id = event.target.closest('.item')?.dataset.id
+  const link = event.target.closest('[data-connection]')?.dataset.connection
+  const start = { id: event.pointerId, sx: event.clientX, sy: event.clientY }
+  if (space || tool === 'pan' || event.button === 1) {
+    drag = { ...start, kind: 'pan', x: camera.x, y: camera.y }
+    event.preventDefault()
+  } else if (tool === 'connect') {
+    connectTo(id)
+  } else if (labels[tool]) {
     addAt(event)
-    return
+  } else if (link) {
+    selectLink(link)
+  } else if (!id) {
+    const initial = event.shiftKey ? new Set(selected) : new Set()
+    selectItems(new Set(initial))
+    drag = { ...start, kind: 'marquee', initial }
+  } else {
+    const resize = event.target.classList.contains('resize')
+    if (event.shiftKey && !resize) {
+      const ids = new Set(selected)
+      if (ids.has(id)) ids.delete(id)
+      else ids.add(id)
+      selectItems(ids)
+      if (!ids.has(id)) return
+    } else if (!selected.has(id)) {
+      select(id)
+    }
+    const values = board.items.filter(value => selected.has(value.id))
+    const anchor = values.find(value => value.id === id)
+    drag = { ...start, kind: resize ? 'resize' : 'move', anchor,
+      x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h,
+      collapse: !event.shiftKey && selected.size > 1,
+      origins: values.map(value => ({ value, x: value.x, y: value.y })) }
   }
-  const pan = space || tool === 'pan' || event.button === 1 || !target
-  if (pan && !target && tool === 'select' && !space && event.button === 0) select()
-  const resize = event.target.classList.contains('resize')
-  if (!pan && selected !== target.dataset.id) select(target.dataset.id)
-  const value = pan ? camera : item()
-  drag = { id: event.pointerId, sx: event.clientX, sy: event.clientY,
-    x: value.x, y: value.y, w: value.w, h: value.h, pan, resize }
-  if (event.button === 1) event.preventDefault()
 }
 viewport.onpointermove = event => {
   if (drag?.id !== event.pointerId) return
@@ -501,44 +672,60 @@ viewport.onpointermove = event => {
   if (!drag.moved && Math.hypot(dx, dy) < 3) return
   if (!drag.moved) {
     viewport.setPointerCapture(event.pointerId)
-    viewport.classList.add('dragging')
     drag.moved = true
-    if (!drag.pan) {
+    if (drag.kind === 'pan') viewport.classList.add('dragging')
+    if (['move', 'resize'].includes(drag.kind)) {
       checkpoint()
       drag.itemChanged = true
     }
   }
-  if (drag.pan) {
+  if (drag.kind === 'pan') {
     camera.x = drag.x + dx
     camera.y = drag.y + dy
     updateCamera()
-  } else {
-    const value = item()
-    const x = drag.x + dx / camera.k
-    const y = drag.y + dy / camera.k
-    let sx, sy
-    if (drag.resize) {
-      sx = snapAxis(drag.x + dimension(drag.w + dx / camera.k), [0], 'x', 'w', value)
-      sy = snapAxis(drag.y + dimension(drag.h + dy / camera.k), [0], 'y', 'h', value)
-      value.w = dimension(sx.position - drag.x)
-      value.h = dimension(sy.position - drag.y)
-      showGuides(value.w === sx.position - drag.x ? sx.guide : undefined,
-        value.h === sy.position - drag.y ? sy.guide : undefined)
-    } else {
-      sx = snapAxis(x, [0, value.w / 2, value.w], 'x', 'w', value)
-      sy = snapAxis(y, [0, value.h / 2, value.h], 'y', 'h', value)
-      value.x = coordinate(sx.position)
-      value.y = coordinate(sy.position)
-      showGuides(value.x === sx.position ? sx.guide : undefined,
-        value.y === sy.position ? sy.guide : undefined)
-    }
-    drawItem(world.querySelector('.selected'), value)
+    return
   }
+  if (drag.kind === 'marquee') {
+    updateMarquee(event)
+    return
+  }
+  if (drag.kind === 'resize') {
+    const sx = snapAxis(drag.x + dimension(drag.w + dx / camera.k), [0], 'x', 'w')
+    const sy = snapAxis(drag.y + dimension(drag.h + dy / camera.k), [0], 'y', 'h')
+    drag.anchor.w = dimension(sx.position - drag.x)
+    drag.anchor.h = dimension(sy.position - drag.y)
+    showGuides(drag.anchor.w === sx.position - drag.x ? sx.guide : undefined,
+      drag.anchor.h === sy.position - drag.y ? sy.guide : undefined)
+  } else {
+    const sx = snapAxis(drag.x + dx / camera.k, [0, drag.w / 2, drag.w], 'x', 'w')
+    const sy = snapAxis(drag.y + dy / camera.k, [0, drag.h / 2, drag.h], 'y', 'h')
+    const limitDelta = (delta, axis) => {
+      let min = -Infinity, max = Infinity
+      for (const origin of drag.origins) {
+        min = Math.max(min, -1e7 - origin[axis])
+        max = Math.min(max, 1e7 - origin[axis])
+      }
+      return Math.max(min, Math.min(max, delta))
+    }
+    const tx = limitDelta(sx.position - drag.x, 'x')
+    const ty = limitDelta(sy.position - drag.y, 'y')
+    for (const origin of drag.origins) {
+      origin.value.x = origin.x + tx
+      origin.value.y = origin.y + ty
+    }
+    showGuides(tx === sx.position - drag.x ? sx.guide : undefined,
+      ty === sy.position - drag.y ? sy.guide : undefined)
+  }
+  const elements = new Map(Array.from(world.children, el => [el.dataset.id, el]))
+  for (const { value } of drag.origins) drawItem(elements.get(value.id), value)
+  renderConnections()
 }
 function endDrag(event) {
   if (drag?.id !== event.pointerId) return
   if (drag.itemChanged) changed()
+  if (!drag.moved && drag.collapse && event.type === 'pointerup') select(drag.anchor.id)
   viewport.classList.remove('dragging')
+  marquee.hidden = true
   showGuides()
   drag = undefined
 }
@@ -547,7 +734,7 @@ viewport.onpointercancel = viewport.onlostpointercapture = endDrag
 viewport.ondblclick = event => {
   const target = event.target.closest('.item')
   if (!target || tool !== 'select' || space) return
-  if (selected !== target.dataset.id) select(target.dataset.id)
+  if (item()?.id !== target.dataset.id) select(target.dataset.id)
   textField.focus()
   textField.select()
 }
@@ -561,7 +748,7 @@ window.addEventListener('keydown', event => {
     return
   }
   if (event.ctrlKey || event.metaKey || event.altKey) return
-  if (event.code === 'Space' && !event.target.closest('button,[role=button]')) {
+  if (event.code === 'Space' && !event.target.closest('button,summary')) {
     event.preventDefault()
     space = true
     viewport.classList.add('space')
@@ -575,10 +762,17 @@ window.addEventListener('keydown', event => {
     remove()
   }
   if (shortcuts[event.code]) setTool(shortcuts[event.code])
-  if (['Enter', 'Space'].includes(event.code) && event.target.matches('.item')) {
+  if (event.code === 'Enter' && event.target.matches('.item')) {
     event.preventDefault()
-    select(event.target.dataset.id)
-    textField.focus()
+    if (tool === 'connect') connectTo(event.target.dataset.id)
+    else {
+      select(event.target.dataset.id)
+      textField.focus()
+    }
+  }
+  if (event.code === 'Enter' && event.target.matches('[data-connection]')) {
+    event.preventDefault()
+    selectLink(event.target.dataset.connection)
   }
 })
 function releaseSpace() {

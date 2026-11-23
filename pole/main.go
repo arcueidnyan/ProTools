@@ -50,10 +50,18 @@ type boardInfo struct {
 	Updated int64  `json:"updated"`
 }
 
+type connection struct {
+	ID    string `json:"id"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Style string `json:"style"`
+}
+
 type board struct {
 	boardInfo
-	Items    []item `json:"items"`
-	Revision int64  `json:"revision"`
+	Items       []item       `json:"items"`
+	Connections []connection `json:"connections"`
+	Revision    int64        `json:"revision"`
 }
 
 type store struct {
@@ -63,7 +71,7 @@ type store struct {
 }
 
 func newBoard(title string, items []item) board {
-	return board{boardInfo: boardInfo{ID: rand.Text(), Title: title, Updated: time.Now().UnixMilli()}, Items: items}
+	return board{boardInfo: boardInfo{ID: rand.Text(), Title: title, Updated: time.Now().UnixMilli()}, Items: items, Connections: []connection{}}
 }
 
 func loadStore(path string) (*store, error) {
@@ -90,6 +98,12 @@ func loadStore(path string) (*store, error) {
 	}
 	if s.boards == nil {
 		return nil, errors.New("файл досок содержит некорректные данные")
+	}
+	for id, value := range s.boards {
+		if value.Connections == nil {
+			value.Connections = []connection{}
+			s.boards[id] = value
+		}
 	}
 	return s, nil
 }
@@ -160,6 +174,15 @@ func validBoard(value board) bool {
 		}
 		seen[v.ID] = true
 	}
+	linkIDs := make(map[string]bool)
+	for _, link := range value.Connections {
+		if link.ID == "" || length(link.ID) > 64 || linkIDs[link.ID] ||
+			!seen[link.From] || !seen[link.To] || link.From == link.To ||
+			!slices.Contains([]string{"straight", "curved", "dashed", "double"}, link.Style) {
+			return false
+		}
+		linkIDs[link.ID] = true
+	}
 	return true
 }
 
@@ -224,6 +247,18 @@ func (s *store) handler() http.Handler {
 		if !ok || old.Revision != b.Revision {
 			fail(w, 409, "Доска изменилась в другой вкладке")
 			return
+		}
+		if b.Connections == nil {
+			ids := make(map[string]bool)
+			for _, item := range b.Items {
+				ids[item.ID] = true
+			}
+			b.Connections = []connection{}
+			for _, link := range old.Connections {
+				if ids[link.From] && ids[link.To] {
+					b.Connections = append(b.Connections, link)
+				}
+			}
 		}
 		b.ID = id
 		b.Revision++

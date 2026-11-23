@@ -29,7 +29,9 @@
       </div>
     </header>
     <section id="viewport" aria-label="Рабочая область доски">
+      <svg id="connections" width="1" height="1" aria-label="Стрелки"></svg>
       <div id="world"></div>
+      <div id="marquee" hidden></div>
       <div id="guide-x" class="guide" aria-hidden="true" hidden></div>
       <div id="guide-y" class="guide" aria-hidden="true" hidden></div>
       <div id="empty"><h2>Ваши идеи начинаются здесь</h2><p>Создайте доску, чтобы добавить первые заметки.</p><button id="empty-create" class="primary">Создать доску</button></div>
@@ -42,6 +44,7 @@
       <button data-tool="text" class="tool" title="Текст (T)" aria-label="Текст"><span aria-hidden="true">Т</span><small>Текст</small></button>
       <button data-tool="rect" class="tool" title="Прямоугольник (R)" aria-label="Прямоугольник"><span aria-hidden="true">▭</span><small>Блок</small></button>
       <button data-tool="ellipse" class="tool" title="Овал (O)" aria-label="Овал"><span aria-hidden="true">◯</span><small>Овал</small></button>
+      <button data-tool="connect" class="tool" title="Стрелка (C)" aria-label="Стрелка"><span aria-hidden="true">↗</span><small>Стрелка</small></button>
       <span class="separator"></span>
       <button id="undo" class="tool compact" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button>
       <button id="redo" class="tool compact" title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить">↷</button>
@@ -55,6 +58,16 @@
       </div>
       <div id="color-group"><span class="field-label">Цвет</span><div class="swatches" id="swatches"></div></div>
       <button id="delete-item" class="remove">Удалить объект</button>
+    </aside>
+    <aside class="inspector panel" id="connection-panel" aria-label="Стрелка" hidden>
+      <label>Вид стрелки<select id="connection-style">
+        <option value="straight">Прямая</option>
+        <option value="curved">Изогнутая</option>
+        <option value="dashed">Пунктирная</option>
+        <option value="double">Двусторонняя</option>
+      </select></label>
+      <div id="connection-hint" aria-live="polite"></div>
+      <button id="delete-connection" class="remove" hidden>Удалить стрелку</button>
     </aside>
     <div id="canvas-hint" hidden>Пробел и перетаскивание — переместить холст</div>
     <div id="zoom" class="panel" aria-label="Масштаб" hidden>
@@ -72,7 +85,7 @@
   </main>
   <dialog id="shortcut-dialog">
     <h2>Горячие клавиши</h2>
-    <dl><dt>Выбор / рука</dt><dd>V / H</dd><dt>Стикер / текст</dt><dd>N / T</dd><dt>Блок / овал</dt><dd>R / O</dd><dt>Переместить холст</dt><dd>Пробел + перетаскивание</dd><dt>Удалить объект</dt><dd>Delete</dd><dt>Отменить / повторить</dt><dd>Ctrl или ⌘ + Z / Shift + Z</dd></dl>
+    <dl><dt>Выбор / рука</dt><dd>V / H</dd><dt>Стрелка</dt><dd>C</dd><dt>Добавить к выделению</dt><dd>Shift + щелчок или рамка</dd><dt>Стикер / текст</dt><dd>N / T</dd><dt>Блок / овал</dt><dd>R / O</dd><dt>Переместить холст</dt><dd>Пробел + перетаскивание</dd><dt>Удалить объект</dt><dd>Delete</dd><dt>Отменить / повторить</dt><dd>Ctrl или ⌘ + Z / Shift + Z</dd></dl>
     <form method="dialog"><button class="primary">Закрыть</button></form>
   </dialog>
 </body>

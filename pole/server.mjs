@@ -19,6 +19,9 @@ db.exec(`PRAGMA journal_mode=WAL;
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY)`)
 const insert = db.prepare('INSERT INTO boards (id,title,items,updated) VALUES (?,?,?,?)')
 db.exec('BEGIN IMMEDIATE')
+if (!db.prepare('PRAGMA table_info(boards)').all().some(column => column.name === 'connections')) {
+  db.exec("ALTER TABLE boards ADD COLUMN connections TEXT NOT NULL DEFAULT '[]'")
+}
 if (db.prepare("INSERT OR IGNORE INTO settings VALUES ('initialized')").run().changes) {
   insert.run(randomUUID(), 'Первые идеи', JSON.stringify(starter), Date.now())
 }
@@ -63,7 +66,7 @@ async function payload(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString()) }
   catch { throw problem(400, 'Некорректный JSON') }
 }
-const decode = row => ({ ...row, items: JSON.parse(row.items) })
+const decode = row => ({ ...row, items: JSON.parse(row.items), connections: JSON.parse(row.connections) })
 const server = createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
@@ -97,9 +100,22 @@ const server = createServer(async (req, res) => {
           !Number.isSafeInteger(input.revision)) {
           throw problem(400, 'Некорректные данные доски')
         }
+        const ids = new Set(input.items.map(item => item.id))
+        const current = getBoard.get(id)
+        if (current?.revision !== input.revision) throw problem(409, 'Доска изменилась в другой вкладке')
+        const connections = input.connections === undefined
+          ? JSON.parse(current.connections).filter(link => ids.has(link.from) && ids.has(link.to))
+          : input.connections
+        const styles = ['straight', 'curved', 'dashed', 'double']
+        if (!Array.isArray(connections) || !connections.every(link => link &&
+          typeof link.id === 'string' && link.id.length > 0 && link.id.length <= 64 &&
+          ids.has(link.from) && ids.has(link.to) && link.from !== link.to && styles.includes(link.style)) ||
+          new Set(connections.map(link => link.id)).size !== connections.length) {
+          throw problem(400, 'Некорректные данные стрелок')
+        }
         const updated = Date.now()
-        const result = db.prepare('UPDATE boards SET title=?,items=?,updated=?,revision=revision+1 WHERE id=? AND revision=?')
-          .run(input.title, JSON.stringify(input.items), updated, id, input.revision)
+        const result = db.prepare('UPDATE boards SET title=?,items=?,connections=?,updated=?,revision=revision+1 WHERE id=? AND revision=?')
+          .run(input.title, JSON.stringify(input.items), JSON.stringify(connections), updated, id, input.revision)
         if (!result.changes) throw problem(409, 'Доска изменилась в другой вкладке')
         return json(res, 200, { revision: input.revision + 1, updated })
       }
