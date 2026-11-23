@@ -1,0 +1,8 @@
+export const starter = [
+  { id: 'intro', kind: 'text', x: 72, y: 66, w: 560, h: 82, text: 'Первые идеи', font: 'PT Serif', size: 57, color: 'white' },
+  { id: 'subtitle', kind: 'text', x: 75, y: 158, w: 540, h: 44, text: 'Соберите мысли, найдите связи, выберите главное.', font: 'Manrope', size: 17, color: 'white' },
+  { id: 'question', kind: 'note', x: 78, y: 260, w: 218, h: 190, text: 'С чего начнём?\n\nКакую задачу хотим решить?', font: 'Golos Text', size: 20, color: 'violet' },
+  { id: 'idea', kind: 'note', x: 330, y: 239, w: 218, h: 190, text: 'Что, если…\n\nЗапишите самую смелую идею.', font: 'Comfortaa', size: 19, color: 'green' },
+  { id: 'steps', kind: 'note', x: 581, y: 266, w: 218, h: 190, text: 'Следующий шаг\n\nЧто можно попробовать уже сегодня?', font: 'PT Serif', size: 21, color: 'peach' },
+  { id: 'hint', kind: 'text', x: 77, y: 494, w: 620, h: 40, text: 'Двойной щелчок по карточке — редактировать текст', font: 'IBM Plex Mono', size: 14, color: 'white' },
+]

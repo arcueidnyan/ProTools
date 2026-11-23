@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Поле — своё пространство для идей и схем.">
+  <title>Поле — визуальные доски</title>
+  <link rel="stylesheet" href="/fonts.css">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar" aria-label="Доски">
+    <div class="brand"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>поле<span class="brand-dot">.</span></span></div>
+    <div class="board-heading"><h1>Мои доски</h1><button id="create" class="add" title="Новая доска" aria-label="Новая доска">＋</button></div>
+    <nav id="boards" aria-label="Список досок"></nav>
+    <button class="new-board" id="new-board">＋ Новая доска</button>
+    <div class="sidebar-foot"><span aria-hidden="true">⌘</span><button id="shortcuts">Горячие клавиши</button></div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <button id="toggle-boards" class="icon" aria-label="Показать доски" aria-expanded="true" title="Доски">☰</button>
+      <span class="header-divider"></span>
+      <input id="title" aria-label="Название доски" placeholder="Название доски" maxlength="120" disabled>
+      <button id="save-status" aria-live="polite" title="Повторить сохранение"></button>
+      <div class="header-actions">
+        <button id="export" class="action" disabled>Скачать JSON</button>
+        <button id="delete-board" class="icon danger" disabled aria-label="Удалить доску" title="Удалить доску">×</button>
+      </div>
+    </header>
+    <section id="viewport" aria-label="Рабочая область доски">
+      <div id="world"></div>
+      <div id="empty"><h2>Ваши идеи начинаются здесь</h2><p>Создайте доску, чтобы добавить первые заметки.</p><button id="empty-create" class="primary">Создать доску</button></div>
+    </section>
+    <div class="tools panel" id="tools" role="toolbar" aria-label="Инструменты" hidden>
+      <button data-tool="select" class="tool" title="Выбор (V)" aria-label="Выбор"><span aria-hidden="true">↖</span><small>Выбор</small></button>
+      <button data-tool="pan" class="tool" title="Перемещение (H)" aria-label="Перемещение"><span aria-hidden="true">✥</span><small>Рука</small></button>
+      <span class="separator"></span>
+      <button data-tool="note" class="tool" title="Стикер (N)" aria-label="Стикер"><span aria-hidden="true">▣</span><small>Стикер</small></button>
+      <button data-tool="text" class="tool" title="Текст (T)" aria-label="Текст"><span aria-hidden="true">Т</span><small>Текст</small></button>
+      <button data-tool="rect" class="tool" title="Прямоугольник (R)" aria-label="Прямоугольник"><span aria-hidden="true">▭</span><small>Блок</small></button>
+      <button data-tool="ellipse" class="tool" title="Овал (O)" aria-label="Овал"><span aria-hidden="true">◯</span><small>Овал</small></button>
+      <span class="separator"></span>
+      <button id="undo" class="tool compact" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button>
+      <button id="redo" class="tool compact" title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить">↷</button>
+    </div>
+    <aside class="inspector panel" id="inspector" aria-label="Свойства объекта" hidden>
+      <div class="inspector-head"><strong id="item-kind"></strong><button id="close-inspector" class="icon" aria-label="Снять выделение">×</button></div>
+      <label>Текст<textarea id="item-text" rows="3" maxlength="4000"></textarea></label>
+      <div class="typography">
+        <label>Шрифт<select id="item-font"></select></label>
+        <label>Размер<input id="item-size" type="number" min="12" max="120" aria-label="Размер шрифта"></label>
+      </div>
+      <div id="color-group"><span class="field-label">Цвет</span><div class="swatches" id="swatches"></div></div>
+      <button id="delete-item" class="remove">Удалить объект</button>
+    </aside>
+    <div id="canvas-hint" hidden>Пробел и перетаскивание — переместить холст</div>
+    <div id="zoom" class="panel" aria-label="Масштаб" hidden>
+      <button id="zoom-out" class="icon" aria-label="Уменьшить">−</button><button id="zoom-reset" title="Вернуть 100%">100%</button><button id="zoom-in" class="icon" aria-label="Увеличить">＋</button><span class="separator"></span><button id="fit" class="icon" aria-label="Показать всю доску" title="Показать всю доску">⛶</button>
+    </div>
+  </main>
+  <dialog id="shortcut-dialog">
+    <h2>Горячие клавиши</h2>
+    <dl><dt>Выбор / рука</dt><dd>V / H</dd><dt>Стикер / текст</dt><dd>N / T</dd><dt>Блок / овал</dt><dd>R / O</dd><dt>Переместить холст</dt><dd>Пробел + перетаскивание</dd><dt>Удалить объект</dt><dd>Delete</dd><dt>Отменить / повторить</dt><dd>Ctrl или ⌘ + Z / Shift + Z</dd></dl>
+    <form method="dialog"><button class="primary">Закрыть</button></form>
+  </dialog>
+</body>
+</html>
