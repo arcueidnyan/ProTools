@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 from html.parser import HTMLParser
 from threading import Lock
+from io import BytesIO
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 COMMUNITY = 'https://steamcommunity.com'
+STEAMCMD_ZIP = 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip'
 DETAILS = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/'
 DOWNLOAD_LOCK = Lock()
 STATIC = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
@@ -110,12 +112,35 @@ def get_item(item_id):
     return item
 
 
-def download(item, archive):
+def steamcmd_path():
     executable = shutil.which(os.environ.get('STEAMCMD', 'steamcmd'))
-    if not executable:
+    if executable:
+        return Path(executable).absolute()
+    if os.name != 'nt' or os.environ.get('WORKSHOP_DOCK_PORTABLE') != '1':
         raise Problem(503, 'Установите SteamCMD и добавьте его в PATH или задайте переменную STEAMCMD.')
+    directory = Path(os.environ['LOCALAPPDATA']) / 'Workshop Dock' / 'SteamCMD'
+    executable = directory / 'steamcmd.exe'
+    if not executable.is_file():
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(BytesIO(steam(STEAMCMD_ZIP))) as bundle:
+                with tempfile.NamedTemporaryFile(dir=directory, delete=False) as temp:
+                    staged = Path(temp.name)
+                    try:
+                        temp.write(bundle.read('steamcmd.exe'))
+                        temp.close()
+                        staged.replace(executable)
+                    finally:
+                        temp.close()
+                        staged.unlink(missing_ok=True)
+        except (OSError, zipfile.BadZipFile, KeyError) as exc:
+            raise Problem(502, 'Не удалось подготовить SteamCMD. Попробуйте скачать мод ещё раз.') from exc
+    return executable
+
+
+def download(item, archive):
+    executable = steamcmd_path()
     app, item_id = identifier(item['app']), item['id']
-    executable = Path(executable).absolute()
     with tempfile.TemporaryDirectory(prefix='workshop-dock-') as directory:
         destination = Path(directory)
         try:
@@ -124,7 +149,11 @@ def download(item, archive):
                  '+force_install_dir', directory, '+login', 'anonymous',
                  '+workshop_download_item', app, item_id, 'validate', '+quit'],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', timeout=900,
+                cwd=executable.parent if os.environ.get('WORKSHOP_DOCK_PORTABLE') == '1' else None,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
+        except OSError as exc:
+            raise Problem(502, 'Не удалось запустить SteamCMD.') from exc
         except subprocess.TimeoutExpired as exc:
             raise Problem(504, 'SteamCMD не завершил загрузку за 15 минут.') from exc
         match = re.search(r'Success\. Downloaded item ' + item_id + r' to "([^"\r\n]+)"', result.stdout)
@@ -210,5 +239,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8765'))
     with ThreadingHTTPServer(('127.0.0.1', port), Handler) as server:
-        print(f'Workshop Dock · http://127.0.0.1:{port}', flush=True)
+        ready = os.environ.get('WORKSHOP_DOCK_READY')
+        if ready:
+            marker = Path(ready)
+            staged = marker.with_suffix('.tmp')
+            staged.write_text(str(server.server_port), encoding='ascii')
+            staged.replace(marker)
+        print(f'Workshop Dock · http://127.0.0.1:{server.server_port}', flush=True)
         server.serve_forever()
