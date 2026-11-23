@@ -1,0 +1,67 @@
+:root {
+  color-scheme: dark;
+  font: 100%/1.55 Inter, system-ui, sans-serif;
+  --ink: #eef2fd;
+  --dim: #a6b2ca;
+  --accent: #89baff;
+  --line: #29354d;
+  --surface: #141e32;
+  background: #0b1221;
+  color: var(--ink);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+.wrap { width: min(1150px, calc(100% - 40px)); margin-inline: auto; }
+header { border-bottom: 1px solid var(--line); }
+.top { display: flex; justify-content: space-between; align-items: center; min-height: 65px; }
+.brand { color: var(--ink); text-decoration: none; font-size: 1.14rem; font-weight: 750; }
+.brand span { color: var(--accent); margin-right: .35rem; }
+.source, .meta, .status { color: var(--dim); font-size: .9rem; }
+.hero {
+  margin-top: 30px;
+  padding: clamp(24px, 5.5vw, 76px);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: radial-gradient(ellipse at 92% 5%, #2e4e82, transparent 60%), linear-gradient(125deg, #10192c, #192c4a);
+}
+.label { margin: 0; color: var(--accent); letter-spacing: .14em; font-weight: 750; font-size: .875rem; }
+h1 { margin: .2em 0; font-size: clamp(2.1rem, 7vw, 5.1rem); letter-spacing: -.06em; line-height: .98; }
+h1 em { font-style: normal; color: var(--accent); }
+.hero > p:not(.label) { max-width: 45ch; color: var(--dim); }
+.hero form { max-width: 610px; margin-top: 24px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row input { flex: 1 1 230px; }
+label { display: block; font-size: .9rem; font-weight: 650; color: var(--dim); }
+label input, label select, #lookup .row { margin-top: 5px; }
+input, select, button, .button { border: 1px solid var(--line); border-radius: 9px; font: inherit; min-height: 44px; padding: 8px 13px; }
+input, select { background: #0d1728; color: var(--ink); min-width: 0; }
+select { appearance: none; padding-right: 36px; background: linear-gradient(45deg, transparent 50%, var(--dim) 50%) right 17px center / 5px 5px no-repeat, linear-gradient(135deg, var(--dim) 50%, transparent 50%) right 12px center / 5px 5px no-repeat #0d1728; }
+button, .button { cursor: pointer; background: var(--accent); color: #0b172b; font-weight: 750; text-decoration: none; white-space: nowrap; }
+button:disabled { opacity: .5; cursor: default; }
+button:not(:disabled):hover, .button:hover { filter: brightness(1.1); }
+:focus-visible { outline: 2px solid #a5cdff; outline-offset: 3px; }
+.secondary { background: var(--surface); color: var(--ink); }
+.catalog { padding: 28px 0 64px; }
+h2 { margin: 0 0 12px; font-size: 1.7rem; letter-spacing: -.035em; }
+.filters { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.filters label { flex: 1 1 165px; }
+.filters .search { flex: 2 1 220px; }
+.filters input, .filters select { display: block; width: 100%; }
+.status:empty { display: none; }
+#lookup-status { margin-top: 10px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 235px), 1fr)); gap: 15px; margin-top: 20px; }
+.card { overflow: hidden; padding: 0; background: var(--surface); color: var(--ink); text-align: left; white-space: normal; display: flex; flex-direction: column; width: 100%; }
+.visual { width: 100%; aspect-ratio: 16/9; background: linear-gradient(130deg, #233858, #121c2e); }
+.visual img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-body { padding: 13px; display: grid; gap: 5px; }
+.card-body strong { overflow-wrap: anywhere; }
+.meta { font-weight: 450; }
+nav { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 23px; }
+dialog { width: min(670px, calc(100% - 30px)); max-height: 90dvh; border: 1px solid var(--line); border-radius: 16px; padding: 22px; background: #101b2e; color: var(--ink); }
+dialog::backdrop { background: #030710cc; }
+.dialog-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.dialog-header h2, #item-description { overflow-wrap: anywhere; }
+#item-image { width: 100%; max-height: 330px; display: block; object-fit: contain; border-radius: 10px; background: #0b1221; }
+#item-description { white-space: pre-wrap; max-height: 27vh; overflow-y: auto; }
+@media (max-width: 480px) { .wrap { width: calc(100% - 24px); } .source { display: none; } }

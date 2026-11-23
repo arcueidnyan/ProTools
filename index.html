@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop Dock — каталог модов Steam</title>
+<link rel="stylesheet" href="/style.css">
+<script defer src="/app.js"></script>
+</head>
+<body>
+<header><div class="wrap top"><a class="brand" href="/"><span aria-hidden="true">⬡</span> Workshop Dock</a><span class="source">Steam Workshop</span></div></header>
+<main class="wrap">
+<section class="hero">
+<p class="label">КАТАЛОГ МОДИФИКАЦИЙ</p>
+<h1>Моды из<br><em>Steam Workshop</em></h1>
+<p>Найдите мод для своей игры или откройте его по ссылке. Для просмотра аккаунт Steam не нужен.</p>
+<form id="lookup">
+<label for="link">Ссылка на мод или Workshop ID</label>
+<div class="row"><input id="link" required placeholder="Например, 818773962" autocomplete="off"><button>Открыть мод</button></div>
+<div id="lookup-status" class="status" role="status"></div>
+</form>
+</section>
+<section class="catalog" aria-labelledby="catalog-title">
+<h2 id="catalog-title">Каталог</h2>
+<form class="filters" id="filters">
+<label>Игра<select id="game"><option value="294100">RimWorld</option><option value="108600">Project Zomboid</option><option value="322330">Don't Starve Together</option><option value="4000">Garry’s Mod</option><option value="255710">Cities: Skylines</option><option value="286160">Tabletop Simulator</option><option value="custom">Другая игра</option></select></label>
+<label id="custom-label" hidden>Steam App ID<input id="custom" inputmode="numeric" pattern="[1-9][0-9]{0,9}" placeholder="App ID" disabled></label>
+<label class="search">Поиск по названию<input id="search" type="search" maxlength="120" placeholder="Поиск в мастерской"></label>
+<label>Сортировка<select id="sort"><option value="trend">Популярные сейчас</option><option value="mostrecent">Новые</option><option value="totaluniquesubscribers">По подписчикам</option></select></label>
+<button>Найти</button>
+</form>
+<p id="catalog-status" class="status" role="status"></p>
+<div id="results" class="grid"></div>
+<nav id="pagination" aria-label="Страницы каталога" hidden><button id="prev" class="secondary">Назад</button><span id="page"></span><button id="next" class="secondary">Дальше</button></nav>
+</section>
+</main>
+<dialog id="item-dialog">
+<div class="dialog-header"><h2 id="item-title"></h2><form method="dialog"><button class="secondary" aria-label="Закрыть">×</button></form></div>
+<img id="item-image" alt="">
+<p id="item-meta" class="meta"></p>
+<p id="item-description"></p>
+<div class="row"><button id="download">Скачать</button><a class="secondary button" id="steam-page" target="_blank" rel="noopener noreferrer">Страница в Steam</a></div>
+<p id="download-status" class="status" role="status"></p>
+</dialog>
+</body>
+</html>
