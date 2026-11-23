@@ -1,8 +1,9 @@
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import HTTPError
 from html.parser import HTMLParser
 from threading import Lock, Thread
 from collections import deque
@@ -43,8 +44,12 @@ def steam(url, data=None):
     try:
         with urlopen(Request(url, data, {'User-Agent': 'WorkshopDock/1.0'}), timeout=18) as response:
             return response.read(8_000_000)
-    except (URLError, TimeoutError) as exc:
-        raise Problem(502, 'Steam не ответил. Попробуйте ещё раз.') from exc
+    except HTTPError as exc:
+        if exc.code == 429:
+            raise Problem(502, 'Steam ограничил частоту запросов. Повторите попытку через минуту.') from exc
+        raise Problem(502, f'Steam вернул ошибку HTTP {exc.code}. Попробуйте ещё раз.') from exc
+    except (OSError, HTTPException) as exc:
+        raise Problem(502, 'Соединение со Steam прервалось. Попробуйте ещё раз.') from exc
 
 
 def https(value):
@@ -56,18 +61,30 @@ def details(ids):
     fields.update({f'publishedfileids[{i}]': item for i, item in enumerate(ids)})
     try:
         data = json.loads(steam(DETAILS, urlencode(fields).encode()))['response']['publishedfiledetails']
-    except (KeyError, ValueError) as exc:
+        if not isinstance(data, list):
+            raise ValueError('Invalid Steam item list')
+    except (KeyError, TypeError, ValueError) as exc:
         raise Problem(502, 'Steam вернул неожиданный ответ.') from exc
-    return {
-        item['publishedfileid']: {
-            'id': item['publishedfileid'], 'app': str(item['consumer_app_id']),
+    items = {}
+    for item in data:
+        if not isinstance(item, dict) or item.get('result') != 1:
+            continue
+        item_id = item.get('publishedfileid')
+        app = item.get('consumer_app_id')
+        if not isinstance(item_id, str) or app is None:
+            continue
+        try:
+            size = int(item.get('file_size') or 0)
+        except (TypeError, ValueError, OverflowError):
+            size = 0
+        items[item_id] = {
+            'id': item_id, 'app': str(app),
             'title': item.get('title', ''), 'description': item.get('description', ''),
             'image': https(item.get('preview_url')), 'file': https(item.get('file_url')),
-            'size': int(item.get('file_size') or 0), 'updated': item.get('time_updated'),
+            'size': size, 'updated': item.get('time_updated'),
             'subscriptions': item.get('subscriptions', 0),
         }
-        for item in data if item.get('result') == 1
-    }
+    return items
 
 
 class WorkshopLinks(HTMLParser):
@@ -434,7 +451,10 @@ class Handler(BaseHTTPRequestHandler):
                     folder = selected_folder()
                 except Problem:
                     folder = None
-                self.json({'enabled': enabled, 'folder': str(folder) if folder else None})
+                self.json({
+                    'enabled': enabled, 'folder': str(folder) if folder else None,
+                    'canExit': bool(os.environ.get('WORKSHOP_DOCK_READY')),
+                })
             elif address.path == '/api/browse':
                 self.json(browse(query))
             elif address.path == '/api/item-extras':
@@ -452,13 +472,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             address = urlsplit(self.path)
-            if address.path not in {'/api/download', '/api/download-folder'}:
+            if address.path not in {'/api/download', '/api/download-folder', '/api/shutdown'}:
                 raise Problem(404, 'Страница не найдена.')
             port = self.server.server_port
             allowed = {f'127.0.0.1:{port}', f'localhost:{port}'}
             host = self.headers.get('Host')
             if host not in allowed or self.headers.get('Origin') != f'http://{host}':
-                raise Problem(403, 'Запустите загрузку со страницы Workshop Dock.')
+                raise Problem(403, 'Выполните действие со страницы Workshop Dock.')
+            if address.path == '/api/shutdown':
+                if not os.environ.get('WORKSHOP_DOCK_READY'):
+                    raise Problem(404, 'Завершение из браузера доступно в Windows EXE.')
+                if not DOWNLOAD_LOCK.acquire(blocking=False):
+                    raise Problem(409, 'Дождитесь завершения загрузки или выбора папки.')
+                try:
+                    self.json({'closed': True})
+                except OSError:
+                    DOWNLOAD_LOCK.release()
+                    raise
+                Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if address.path == '/api/download-folder':
                 if not DOWNLOAD_LOCK.acquire(blocking=False):
                     raise Problem(409, 'Дождитесь завершения загрузки или выбора папки.')

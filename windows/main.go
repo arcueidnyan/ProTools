@@ -113,9 +113,11 @@ func run() error {
 				url := "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 				status, _, _ := shellExecute.Call(0, uintptr(unsafe.Pointer(wide("open"))), uintptr(unsafe.Pointer(wide(url))), 0, 0, 1)
 				if status <= 32 {
-					show("Откройте в браузере "+url+"\n\nНажмите OK, чтобы закрыть Workshop Dock.", 0x40)
-				} else {
-					show("Workshop Dock открыт в браузере.\n\nНажмите OK, когда закончите работу и загрузки.", 0x40)
+					show("Откройте в браузере "+url+"\n\nЧтобы завершить работу, нажмите «Закрыть Workshop Dock» в браузере.", 0x40)
+				}
+				if err := <-done; err != nil {
+					output, _ := os.ReadFile(logPath)
+					return fmt.Errorf("%v\n%s", err, output)
 				}
 				return nil
 			}
@@ -127,6 +129,6 @@ func run() error {
 
 func main() {
 	if err := run(); err != nil {
-		show("Не удалось запустить Workshop Dock.\n\n"+err.Error(), 0x10)
+		show("Workshop Dock завершился с ошибкой.\n\n"+err.Error(), 0x10)
 	}
 }

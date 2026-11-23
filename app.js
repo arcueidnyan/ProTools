@@ -8,10 +8,16 @@ let extrasController
 let currentItem
 
 async function api(path, options) {
-  const response = await fetch(path, options)
+  let response
+  try {
+    response = await fetch(path, options)
+  } catch (error) {
+    if (error.name === 'AbortError') throw error
+    throw new Error('Связь с Workshop Dock потеряна. Запустите EXE заново и используйте открывшуюся вкладку.')
+  }
   if (!response.ok) {
-    const payload = await response.json()
-    const error = new Error(payload.error)
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.error || 'Workshop Dock вернул ошибку HTTP ' + response.status + '.')
     error.details = payload.details
     throw error
   }
@@ -401,8 +407,28 @@ $('choose-folder').addEventListener('click', async () => {
 
 api('/api/download-folder')
   .then(response => response.json())
-  .then(({enabled, folder}) => {
+  .then(({enabled, folder, canExit}) => {
+    $('close-app').hidden = !canExit
     $('download-folder').hidden = !enabled
     showDownloadFolder(folder)
   })
   .catch(() => {})
+
+$('close-app').addEventListener('click', async () => {
+  if (processingQueue) {
+    window.alert('Дождитесь завершения очереди загрузок.')
+    return
+  }
+  const button = $('close-app')
+  button.disabled = true
+  try {
+    await api('/api/shutdown', {method: 'POST'})
+    document.querySelector('main').replaceChildren(element('p', 'status', 'Workshop Dock закрыт. Эту вкладку можно закрыть.'))
+    button.hidden = true
+    $('queue-link').hidden = true
+  } catch (error) {
+    window.alert(error.message)
+  } finally {
+    button.disabled = false
+  }
+})
