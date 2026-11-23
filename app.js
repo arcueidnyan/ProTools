@@ -1,5 +1,7 @@
 const $ = id => document.getElementById(id)
 let page = 1
+let totalPages = 0
+let categoryApp
 let browseController
 let lookupController
 const jobs = new Map()
@@ -63,12 +65,12 @@ function card(item) {
   return container
 }
 
-function renderPagination(totalPages) {
+function renderPagination() {
   $('pagination').hidden = false
   $('page').textContent = totalPages ? `Страница ${page} · Всего страниц: ${totalPages}` : 'Всего страниц: 0'
   document.querySelector('#pagination > .page-controls').hidden = totalPages <= 1
-  $('prev').disabled = page <= 1
-  $('next').disabled = page >= totalPages
+  $('first').disabled = $('prev').disabled = page <= 1
+  $('last').disabled = $('next').disabled = page >= totalPages
 
   const count = Math.min(5, totalPages)
   const start = Math.max(1, Math.min(page - 2, totalPages - count + 1))
@@ -83,12 +85,33 @@ function renderPagination(totalPages) {
   $('page-numbers').replaceChildren(...buttons)
 }
 
+function renderCategories(categories) {
+  if (!Array.isArray(categories)) return
+  const select = $('category')
+  const all = element('option', '', 'Все категории')
+  all.value = ''
+  const options = categories.map(category => {
+    const option = element('option', '', category.label)
+    option.value = category.tag
+    return option
+  })
+  select.replaceChildren(all, ...options)
+  select.value = options.some(option => option.value === activeFilters.category) ? activeFilters.category : ''
+  $('category-label').hidden = options.length === 0
+}
+
 let activeFilters
 async function browse(target = 1, fromPagination = false) {
   if (!fromPagination) {
     if (!$('filters').reportValidity()) return
+    const app = $('game').value === 'custom' ? $('custom').value : $('game').value
+    if (categoryApp !== app) {
+      categoryApp = app
+      renderCategories([])
+    }
     activeFilters = {
-      app: $('game').value === 'custom' ? $('custom').value : $('game').value,
+      app,
+      category: $('category').value,
       sort: $('sort').value,
       q: $('search').value.trim(),
     }
@@ -103,10 +126,15 @@ async function browse(target = 1, fromPagination = false) {
   try {
     const payload = await (await api('/api/browse?' + query, {signal: controller.signal})).json()
     if (controller.signal.aborted) return
-    page = target
+    totalPages = payload.totalPages
+    if (totalPages && target > totalPages) {
+      return browse(totalPages, true)
+    }
+    page = totalPages ? target : 1
+    renderCategories(payload.categories)
     $('results').replaceChildren(...payload.items.map(card))
     $('catalog-status').textContent = payload.items.length ? '' : 'Моды не найдены. Попробуйте другой запрос или App ID.'
-    renderPagination(payload.totalPages)
+    renderPagination()
     if (fromPagination) {
       $('catalog-title').focus({preventScroll: true})
       $('catalog-title').scrollIntoView()
@@ -381,6 +409,9 @@ $('game').addEventListener('change', () => {
   else browse()
 })
 $('sort').addEventListener('change', () => browse())
+$('category').addEventListener('change', () => browse())
+$('first').addEventListener('click', () => browse(1, true))
+$('last').addEventListener('click', () => browse(totalPages, true))
 $('prev').addEventListener('click', () => browse(page - 1, true))
 $('next').addEventListener('click', () => browse(page + 1, true))
 browse()

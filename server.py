@@ -106,6 +106,27 @@ class WorkshopLinks(HTMLParser):
             self.item = None
 
 
+def workshop_categories(markup):
+    data = re.search(r'<script\b[^>]*\bid="valve-ssr-data"[^>]*>(.*?)</script>', markup, re.S)
+    if not data:
+        return None
+    try:
+        for value in json.loads(data[1])['loaderData']:
+            entry = json.loads(value) if isinstance(value, str) else value
+            if not isinstance(entry, dict) or 'declaredTags' not in entry:
+                continue
+            categories = {}
+            for group in entry['declaredTags'].get('readytouse_tags', []):
+                for tag in group.get('tags', []):
+                    name = tag.get('name')
+                    if isinstance(name, str) and name and not tag.get('admin_only'):
+                        categories[name] = tag.get('display_name') or name
+            return [{'tag': name, 'label': label} for name, label in categories.items()]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return None
+
+
 def browse(query):
     app = identifier(query.get('app', '233860'))
     raw_page = query.get('page', '1')
@@ -116,6 +137,10 @@ def browse(query):
         raise Problem(400, 'Неизвестная сортировка.')
     params = {'appid': app, 'searchtext': query.get('q', '')[:120], 'browsesort': sort,
               'section': 'readytouseitems', 'p': raw_page}
+    if category := query.get('category', ''):
+        if len(category) > 200:
+            raise Problem(400, 'Название категории слишком длинное.')
+        params['requiredtags[]'] = category
     parser = WorkshopLinks()
     html = steam(f'{COMMUNITY}/workshop/browse/?{urlencode(params)}').decode(errors='replace')
     parser.feed(html)
@@ -125,7 +150,7 @@ def browse(query):
     ids = list(parser.ids)
     found = details(ids[:50]) if ids else {}
     return {'items': [found[item] for item in ids if item in found and found[item]['app'] == app],
-            'totalPages': int(page_count[1])}
+            'totalPages': int(page_count[1]), 'categories': workshop_categories(html)}
 
 
 def get_item(item_id):
