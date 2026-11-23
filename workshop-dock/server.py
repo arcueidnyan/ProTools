@@ -1,6 +1,7 @@
 from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from contextlib import contextmanager
 from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -18,6 +19,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
+KENSHI_APP = '233860'
 COMMUNITY = 'https://steamcommunity.com'
 STEAMCMD_ZIP = 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip'
 DETAILS = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/'
@@ -390,7 +392,8 @@ def run_steamcmd(command, executable, item_id, report):
             reader.join(timeout=2)
         return subprocess.CompletedProcess(command, process.returncode, ''.join(output.copy()))
 
-def download(item, archive, folder=None):
+@contextmanager
+def downloaded_mod(item, folder=None):
     def report(stage, percent=None):
         DOWNLOAD_PROGRESS[item['id']] = {'stage': stage, 'percent': percent}
 
@@ -417,13 +420,72 @@ def download(item, archive, folder=None):
                 break
             if attempt or not re.search(r'Restarting SteamCMD|SteamCMD needs to restart', result.stdout, re.I):
                 raise steamcmd_failure(result.stdout, result.returncode)
+        yield source, report
+
+
+def mod_files(source):
+    for path in source.rglob('*'):
+        if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(source):
+            yield path
+
+
+def kenshi_layout(source):
+    entries = list(mod_files(source))
+    mods = [path for path in entries if path.suffix.lower() == '.mod']
+    root_mods = [path for path in mods if path.parent == source]
+    choices = root_mods or mods
+    if not choices:
+        raise Problem(422, 'В загрузке Kenshi не найден файл .mod.')
+    if len(choices) != 1:
+        raise Problem(422, 'В загрузке Kenshi несколько файлов .mod. Нельзя однозначно выбрать имя папки.',
+                      '\n'.join(path.relative_to(source).as_posix() for path in choices)[:3000])
+    mod_file = choices[0]
+    name = mod_file.stem
+    if (name in {'', '.', '..'} or name.endswith((' ', '.'))
+            or re.search(r'[<>:"/\\|?*\x00-\x1f]', name) or PureWindowsPath(name).is_reserved()):
+        raise Problem(422, 'Имя файла .mod нельзя использовать как имя папки Windows.', mod_file.name)
+    return name, mod_file.parent, entries
+
+
+def download(item, archive, folder=None):
+    with downloaded_mod(item, folder) as (source, report):
         report('packing')
+        base = source
+        prefix = Path()
+        if item['app'] == KENSHI_APP:
+            name, base, entries = kenshi_layout(source)
+            prefix = Path(name)
+        else:
+            entries = mod_files(source)
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=3) as output:
-            for path in source.rglob('*'):
-                if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(source):
-                    output.write(path, path.relative_to(source).as_posix())
+            for path in entries:
+                if path.is_relative_to(base):
+                    output.write(path, (prefix / path.relative_to(base)).as_posix())
             if not output.namelist():
                 raise Problem(502, 'В папке мода нет файлов.')
+
+
+def save_kenshi_mod(item, folder):
+    folder = steam_directory(folder)
+    with downloaded_mod(item, folder) as (source, report):
+        report('organizing')
+        name, base, entries = kenshi_layout(source)
+        destination = folder / name
+        if destination.exists() or destination.is_symlink():
+            raise Problem(409, 'Папка мода уже существует. Переместите её или выберите другую папку загрузок.',
+                          str(destination))
+        with tempfile.TemporaryDirectory(prefix='workshop-copy-', dir=folder) as temp:
+            staged = Path(temp) / 'mod'
+            staged.mkdir()
+            for path in entries:
+                if path.is_relative_to(base):
+                    target = staged / path.relative_to(base)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, target)
+            if destination.exists() or destination.is_symlink():
+                raise Problem(409, 'Папка мода уже существует.', str(destination))
+            staged.rename(destination)
+        return destination
 
 
 def save_download(item, folder):
@@ -525,7 +587,7 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     DOWNLOAD_LOCK.release()
             item = get_item(parse_qs(address.query).get('id', [''])[0])
-            if item['file']:
+            if item['file'] and item['app'] != KENSHI_APP:
                 return self.json({'url': item['file']})
             if not DOWNLOAD_LOCK.acquire(blocking=False):
                 raise Problem(409, 'Дождитесь завершения текущей загрузки.')
@@ -533,9 +595,11 @@ class Handler(BaseHTTPRequestHandler):
                 folder = selected_folder()
                 if folder is not None:
                     try:
+                        if item['app'] == KENSHI_APP:
+                            return self.json({'modFolder': str(save_kenshi_mod(item, folder))})
                         return self.json({'saved': str(save_download(item, folder))})
                     except OSError as exc:
-                        raise Problem(502, 'Не удалось сохранить ZIP. Выберите доступную папку для загрузок.', str(exc)) from exc
+                        raise Problem(502, 'Не удалось сохранить мод. Выберите доступную папку для загрузок.', str(exc)) from exc
                 with tempfile.TemporaryFile() as archive:
                     download(item, archive)
                     DOWNLOAD_PROGRESS[item['id']] = {'stage': 'transferring'}

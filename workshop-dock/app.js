@@ -268,6 +268,7 @@ const stageLabels = {
   updating: 'Обновление SteamCMD…',
   downloading: 'Скачивание мода…',
   packing: 'Упаковка ZIP…',
+  organizing: 'Подготовка папки мода…',
   transferring: 'Передача ZIP браузеру…',
 }
 
@@ -318,7 +319,7 @@ function enqueue(item) {
   setJobStatus(job, 'В очереди')
   $('queue-notice').textContent = 'Добавлено в очередь: ' + (item.title || item.id)
   if ($('item-dialog').open) $('item-download-notice').textContent = $('queue-notice').textContent
-  if (item.file) {
+  if (item.file && item.app !== '233860') {
     job.state = 'done'
     setJobStatus(job, 'Прямой файл Steam')
     const link = steamLink(item.file, 'Скачать файл')
@@ -369,7 +370,8 @@ async function downloadJob(job) {
     if (response.headers.get('content-type').startsWith('application/json')) {
       const payload = await response.json()
       job.state = 'done'
-      if (payload.saved) setJobStatus(job, 'ZIP сохранён: ' + payload.saved)
+      if (payload.modFolder) setJobStatus(job, 'Папка мода готова: ' + payload.modFolder)
+      else if (payload.saved) setJobStatus(job, 'ZIP сохранён: ' + payload.saved)
       else {
         setJobStatus(job, 'Прямой файл Steam')
         job.result.append(steamLink(payload.url, 'Скачать файл'))
