@@ -4,7 +4,7 @@
 
 ## Windows
 
-[Скачайте WorkshopDock.exe](https://github.com/arcueidnyan/ProTools/releases/latest/download/WorkshopDock.exe) и откройте двойным кликом. Workshop Dock сам откроет браузер. Когда закончите, нажмите OK в окне Workshop Dock.
+[Скачайте WorkshopDock.exe](https://github.com/arcueidnyan/ProTools/raw/refs/heads/windows-download/WorkshopDock.exe) и откройте двойным кликом. Workshop Dock сам откроет браузер. Когда закончите, нажмите OK в окне Workshop Dock.
 
 Python уже внутри. Если для мода нужна ZIP-загрузка, приложение само скачает SteamCMD с сервера Valve и сохранит его для следующих запусков. Для поиска и скачивания нужен интернет.
 
