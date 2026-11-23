@@ -51,10 +51,12 @@ type boardInfo struct {
 }
 
 type connection struct {
-	ID    string `json:"id"`
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Style string `json:"style"`
+	ID       string `json:"id"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Style    string `json:"style"`
+	FromPort string `json:"fromPort,omitempty"`
+	ToPort   string `json:"toPort,omitempty"`
 }
 
 type board struct {
@@ -175,9 +177,11 @@ func validBoard(value board) bool {
 		seen[v.ID] = true
 	}
 	linkIDs := make(map[string]bool)
+	ports := []string{"", "n", "ne", "e", "se", "s", "sw", "w", "nw"}
 	for _, link := range value.Connections {
 		if link.ID == "" || length(link.ID) > 64 || linkIDs[link.ID] ||
 			!seen[link.From] || !seen[link.To] || link.From == link.To ||
+			!slices.Contains(ports, link.FromPort) || !slices.Contains(ports, link.ToPort) ||
 			!slices.Contains([]string{"straight", "curved", "dashed", "double"}, link.Style) {
 			return false
 		}

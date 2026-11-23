@@ -107,9 +107,12 @@ const server = createServer(async (req, res) => {
           ? JSON.parse(current.connections).filter(link => ids.has(link.from) && ids.has(link.to))
           : input.connections
         const styles = ['straight', 'curved', 'dashed', 'double']
+        const ports = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+        const validPort = value => value === undefined || ports.includes(value)
         if (!Array.isArray(connections) || !connections.every(link => link &&
           typeof link.id === 'string' && link.id.length > 0 && link.id.length <= 64 &&
-          ids.has(link.from) && ids.has(link.to) && link.from !== link.to && styles.includes(link.style)) ||
+          ids.has(link.from) && ids.has(link.to) && link.from !== link.to && styles.includes(link.style) &&
+          validPort(link.fromPort) && validPort(link.toPort)) ||
           new Set(connections.map(link => link.id)).size !== connections.length) {
           throw problem(400, 'Некорректные данные стрелок')
         }

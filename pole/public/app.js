@@ -52,6 +52,11 @@ let selectedConnection
 let connectionStart
 let connectionStyle = 'straight'
 const connectionLayer = byId('connections')
+const connectionControls = byId('connection-controls')
+const ports = {
+  n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1],
+  s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1]
+}
 const marquee = byId('marquee')
 let tool = 'select'
 let space = false
@@ -354,6 +359,66 @@ function edge(value, dx, dy) {
     y: value.y + value.h / 2 + (scale ? dy / scale : 0)
   }
 }
+function portPosition(value, port) {
+  const [x, y] = ports[port]
+  return edge(value, x * value.w / 2, y * value.h / 2)
+}
+function endpoints(link, from, to) {
+  const dx = to.x + to.w / 2 - from.x - from.w / 2
+  const dy = to.y + to.h / 2 - from.y - from.h / 2
+  return [
+    link.fromPort ? portPosition(from, link.fromPort) : edge(from, dx || (!dy ? 1 : 0), dy),
+    link.toPort ? portPosition(to, link.toPort) : edge(to, -dx || (!dy ? -1 : 0), -dy)
+  ]
+}
+function connectionPath(a, b, style, fromPort, toPort) {
+  if (style !== 'curved') return `M${a.x} ${a.y} L${b.x} ${b.y}`
+  const dx = b.x - a.x, dy = b.y - a.y
+  const distance = Math.hypot(dx, dy)
+  const bend = Math.min(90, distance / 2)
+  const offset = Math.min(80, distance / 3) / (distance || 1)
+  const first = fromPort ? ports[fromPort].map(value => value * bend) : [dx / 3 - dy * offset, dy / 3 + dx * offset]
+  const last = toPort ? ports[toPort].map(value => value * bend) : [-dx / 3 - dy * offset, -dy / 3 + dx * offset]
+  return `M${a.x} ${a.y} C${a.x + first[0]} ${a.y + first[1]} ${b.x + last[0]} ${b.y + last[1]} ${b.x} ${b.y}`
+}
+function renderConnectionControls() {
+  const elements = document.createDocumentFragment()
+  const draft = drag?.kind === 'connection' ? drag : undefined
+  if (draft?.point) {
+    const { fixed, end, point, target, style } = draft
+    const a = end === 'from' ? point : fixed
+    const b = end === 'from' ? fixed : point
+    elements.append(svg('path', { class: 'connection-preview',
+      d: connectionPath(a, b, style, end === 'from' ? target?.port : draft.fixedPort,
+        end === 'from' ? draft.fixedPort : target?.port),
+      'marker-end': 'url(#arrow-tip-selected)', ...(style === 'double' ? { 'marker-start': 'url(#arrow-tip-selected)' } : {}),
+      ...(style === 'dashed' ? { 'stroke-dasharray': '6 5' } : {}) }))
+  }
+  if (tool === 'connect' || draft) {
+    for (const value of board.items) {
+      if (value.id === draft?.fixedId) continue
+      for (const port of Object.keys(ports)) {
+        const point = portPosition(value, port)
+        const active = draft?.target?.id === value.id && draft.target.port === port
+        elements.append(svg('circle', { class: active ? 'connection-port target' : 'connection-port',
+          cx: point.x, cy: point.y, r: (active ? 6 : 4.5) / camera.k,
+          'data-port': port, 'data-item': value.id }))
+      }
+    }
+  } else {
+    const link = connection()
+    if (link) {
+      const from = board.items.find(value => value.id === link.from)
+      const to = board.items.find(value => value.id === link.to)
+      const [a, b] = endpoints(link, from, to)
+      for (const [end, point] of [['from', a], ['to', b]]) {
+        elements.append(svg('circle', { class: 'connection-end', cx: point.x, cy: point.y,
+          r: 6 / camera.k, 'data-end': end }))
+      }
+    }
+  }
+  connectionControls.replaceChildren(elements)
+}
 function renderConnections() {
   const items = new Map((board?.items || []).map(value => [value.id, value]))
   const defs = svg('defs')
@@ -368,16 +433,9 @@ function renderConnections() {
   for (const link of board?.connections || []) {
     const from = items.get(link.from), to = items.get(link.to)
     if (!from || !to) continue
-    const dx = to.x + to.w / 2 - from.x - from.w / 2
-    const dy = to.y + to.h / 2 - from.y - from.h / 2
-    const a = edge(from, dx || (!dy ? 1 : 0), dy)
-    const b = edge(to, -dx || (!dy ? -1 : 0), -dy)
-    const stepX = (b.x - a.x) / 3, stepY = (b.y - a.y) / 3
-    const bend = Math.min(80, Math.hypot(stepX, stepY)) / (Math.hypot(dx, dy) || 1)
-    const cx = stepX - dy * bend, cy = stepY + dx * bend
-    const path = link.style === 'curved'
-      ? `M${a.x} ${a.y} C${a.x + cx} ${a.y + cy} ${b.x - stepX - dy * bend} ${b.y - stepY + dx * bend} ${b.x} ${b.y}`
-      : `M${a.x} ${a.y} L${b.x} ${b.y}`
+    if (drag?.kind === 'connection' && drag.link === link && drag.moved) continue
+    const [a, b] = endpoints(link, from, to)
+    const path = connectionPath(a, b, link.style, link.fromPort, link.toPort)
     const active = selectedConnection === link.id
     const group = svg('g', { class: active ? 'connection selected' : 'connection',
       'data-connection': link.id, tabindex: 0, role: 'button', 'aria-label': 'Стрелка между объектами' })
@@ -389,6 +447,7 @@ function renderConnections() {
     elements.append(group)
   }
   connectionLayer.replaceChildren(elements)
+  renderConnectionControls()
 }
 function selectLink(id) {
   selected = new Set()
@@ -397,18 +456,22 @@ function selectLink(id) {
   renderConnections()
   renderInspector()
 }
+function addConnection(from, to, fromPort, toPort) {
+  checkpoint()
+  const link = { id: newId(), from, to, style: connectionStyle,
+    ...(fromPort ? { fromPort } : {}), ...(toPort ? { toPort } : {}) }
+  board.connections.push(link)
+  setTool('select')
+  selectLink(link.id)
+  changed()
+}
 function connectTo(id) {
   if (!id || id === connectionStart) {
     connectionStart = undefined
   } else if (!connectionStart) {
     connectionStart = id
   } else {
-    checkpoint()
-    const link = { id: newId(), from: connectionStart, to: id, style: connectionStyle }
-    board.connections.push(link)
-    setTool('select')
-    selectLink(link.id)
-    changed()
+    addConnection(connectionStart, id)
     return
   }
   renderSelection()
@@ -422,15 +485,31 @@ byId('connection-style').onchange = event => {
     renderConnections()
     changed()
   }
-  connectionStyle = event.target.value
+  if (!value) connectionStyle = event.target.value
+}
+byId('reverse-connection').onclick = () => {
+  const link = connection()
+  if (!link || busy || drag) return
+  checkpoint()
+  const from = link.from
+  link.from = link.to
+  link.to = from
+  const fromPort = link.fromPort
+  if (link.toPort) link.fromPort = link.toPort
+  else delete link.fromPort
+  if (fromPort) link.toPort = fromPort
+  else delete link.toPort
+  renderConnections()
+  changed()
 }
 function renderInspector() {
   const link = connection()
   byId('connection-panel').hidden = !board || (tool !== 'connect' && !link)
   byId('connection-style').value = link?.style || connectionStyle
   byId('connection-hint').textContent = tool === 'connect'
-    ? (connectionStart ? 'Выберите конечный объект' : 'Выберите начальный объект') : ''
-  byId('delete-connection').hidden = !link
+    ? (connectionStart ? 'Выберите конечный объект' : 'Протяните стрелку между точками на объектах.')
+    : (link ? 'Перетащите любой конец стрелки на другую точку.' : '')
+  byId('delete-connection').hidden = byId('reverse-connection').hidden = !link
   const value = item()
   byId('inspector').hidden = !value
   if (!value) return
@@ -501,6 +580,7 @@ function setTool(next) {
   if (next === 'connect') select()
   else if (resetStart) renderSelection()
   renderInspector()
+  renderConnectionControls()
   viewport.dataset.tool = next
   viewport.dataset.add = String(Boolean(labels[next]))
   for (const button of document.querySelectorAll('[data-tool].tool')) {
@@ -512,10 +592,11 @@ byId('undo').onclick = () => undo()
 byId('redo').onclick = () => undo(true)
 function updateCamera() {
   const { x, y, k } = camera
-  connectionLayer.style.transform = world.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')'
+  connectionControls.style.transform = connectionLayer.style.transform = world.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')'
   viewport.style.backgroundSize = gridStep * k + 'px ' + gridStep * k + 'px'
   viewport.style.backgroundPosition = x + 'px ' + y + 'px'
   byId('zoom-reset').textContent = Math.round(k * 100) + '%'
+  renderConnectionControls()
 }
 function fit() {
   if (!board?.items.length) {
@@ -629,16 +710,80 @@ function updateMarquee(event) {
   }
   selectItems(ids)
 }
+function beginConnection(start, id, port, end) {
+  const link = end ? connection() : undefined
+  const fixedEnd = end === 'from' ? 'to' : 'from'
+  const fixedId = link ? link[fixedEnd] : id
+  const fixedPort = link ? link[fixedEnd + 'Port'] : port
+  let fixed
+  if (link) {
+    const from = board.items.find(value => value.id === link.from)
+    const to = board.items.find(value => value.id === link.to)
+    fixed = endpoints(link, from, to)[fixedEnd === 'from' ? 0 : 1]
+  } else {
+    fixed = portPosition(board.items.find(value => value.id === id), port)
+  }
+  drag = { ...start, kind: 'connection', link, end: end || 'to', fixed, fixedId, fixedPort,
+    style: link?.style || connectionStyle }
+}
+function aimConnection(draft, event) {
+  const rect = viewport.getBoundingClientRect()
+  const point = { x: (event.clientX - rect.left - camera.x) / camera.k,
+    y: (event.clientY - rect.top - camera.y) / camera.k }
+  let distance = 12 / camera.k
+  draft.point = point
+  draft.target = undefined
+  for (const value of board.items) {
+    if (value.id === draft.fixedId) continue
+    for (const port of Object.keys(ports)) {
+      const position = portPosition(value, port)
+      const gap = Math.hypot(point.x - position.x, point.y - position.y)
+      if (gap >= distance) continue
+      distance = gap
+      draft.point = position
+      draft.target = { id: value.id, port }
+    }
+  }
+}
+function finishConnection(draft, event) {
+  if (event.type === 'pointerup' && draft.moved) {
+    aimConnection(draft, event)
+    const { target, link, end } = draft
+    if (target && !link) {
+      addConnection(draft.fixedId, target.id, draft.fixedPort, target.port)
+      return
+    }
+    if (target && (link[end] !== target.id || link[end + 'Port'] !== target.port)) {
+      checkpoint()
+      link[end] = target.id
+      link[end + 'Port'] = target.port
+      changed()
+    }
+  } else if (event.type === 'pointerup' && !draft.link) {
+    connectTo(draft.fixedId)
+  }
+  renderConnections()
+}
 viewport.onpointerdown = event => {
   if (!board || busy || drag || ![0, 1].includes(event.button)) return
   const id = event.target.closest('.item')?.dataset.id
   const link = event.target.closest('[data-connection]')?.dataset.connection
   const start = { id: event.pointerId, sx: event.clientX, sy: event.clientY }
+  const port = event.target.closest('[data-port]')
+  const end = event.target.closest('[data-end]')?.dataset.end
   if (space || tool === 'pan' || event.button === 1) {
     drag = { ...start, kind: 'pan', x: camera.x, y: camera.y }
     event.preventDefault()
+  } else if (end && tool === 'select') {
+    beginConnection(start, undefined, undefined, end)
+    event.preventDefault()
   } else if (tool === 'connect') {
-    connectTo(id)
+    if (port) {
+      beginConnection(start, port.dataset.item, port.dataset.port)
+      event.preventDefault()
+    } else {
+      connectTo(id)
+    }
   } else if (labels[tool]) {
     addAt(event)
   } else if (link) {
@@ -678,6 +823,13 @@ viewport.onpointermove = event => {
       checkpoint()
       drag.itemChanged = true
     }
+  }
+  if (drag.kind === 'connection') {
+    const firstMove = !drag.point
+    aimConnection(drag, event)
+    if (firstMove) renderConnections()
+    else renderConnectionControls()
+    return
   }
   if (drag.kind === 'pan') {
     camera.x = drag.x + dx
@@ -722,6 +874,12 @@ viewport.onpointermove = event => {
 }
 function endDrag(event) {
   if (drag?.id !== event.pointerId) return
+  if (drag.kind === 'connection') {
+    const draft = drag
+    drag = undefined
+    finishConnection(draft, event)
+    return
+  }
   if (drag.itemChanged) changed()
   if (!drag.moved && drag.collapse && event.type === 'pointerup') select(drag.anchor.id)
   viewport.classList.remove('dragging')
@@ -740,6 +898,10 @@ viewport.ondblclick = event => {
 }
 byId('shortcuts').onclick = () => byId('shortcut-dialog').showModal()
 window.addEventListener('keydown', event => {
+  if (drag?.kind === 'connection' && event.code === 'Escape') {
+    endDrag({ type: 'pointercancel', pointerId: drag.id })
+    return
+  }
   if (!board || busy || drag || byId('shortcut-dialog').open ||
       event.target.matches('input,textarea,select')) return
   if ((event.ctrlKey || event.metaKey) && event.code === 'KeyZ') {

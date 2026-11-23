@@ -93,7 +93,7 @@ dd{margin:0;text-align:right;color:var(--muted)}
 .view-options-menu label{display:flex;align-items:center;gap:7px;padding:6px 0;font-size:14px;cursor:pointer}
 .view-options-menu input{accent-color:var(--accent)}
 
-#connections{position:absolute;top:0;left:0;overflow:visible;transform-origin:0 0;pointer-events:none}
+#connections,#connection-controls{position:absolute;top:0;left:0;overflow:visible;transform-origin:0 0;pointer-events:none}
 .connection-line{fill:none;stroke:currentColor;stroke-width:2;pointer-events:none}
 .connection-hit{fill:none;stroke:transparent;stroke-width:12;vector-effect:non-scaling-stroke;pointer-events:stroke;cursor:pointer}
 .connection{color:#625e76}
@@ -103,3 +103,9 @@ dd{margin:0;text-align:right;color:var(--muted)}
 #marquee{position:absolute;z-index:1;border:1px solid #6746d2;background:#6746d222;pointer-events:none}
 #connection-hint{font-size:14px;color:var(--muted)}
 @media(max-width:370px){.tool{min-width:33px}.tool small{font-size:10px}}
+
+.connection-port,.connection-end{fill:white;stroke:#6746d2;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:all;cursor:crosshair}
+.connection-port:hover,.connection-port.target,.connection-end:hover{fill:#6746d2}
+.connection-end{cursor:grab}
+.connection-preview{fill:none;stroke:#6746d2;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none}
+#reverse-connection{margin-top:10px}

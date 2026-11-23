@@ -31,6 +31,7 @@
     <section id="viewport" aria-label="Рабочая область доски">
       <svg id="connections" width="1" height="1" aria-label="Стрелки"></svg>
       <div id="world"></div>
+      <svg id="connection-controls" width="1" height="1" aria-hidden="true"></svg>
       <div id="marquee" hidden></div>
       <div id="guide-x" class="guide" aria-hidden="true" hidden></div>
       <div id="guide-y" class="guide" aria-hidden="true" hidden></div>
@@ -67,6 +68,7 @@
         <option value="double">Двусторонняя</option>
       </select></label>
       <div id="connection-hint" aria-live="polite"></div>
+      <button id="reverse-connection" class="action" hidden>Развернуть</button>
       <button id="delete-connection" class="remove" hidden>Удалить стрелку</button>
     </aside>
     <div id="canvas-hint" hidden>Пробел и перетаскивание — переместить холст</div>
