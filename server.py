@@ -4,8 +4,10 @@ from urllib.parse import urlencode, urlsplit, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 from html.parser import HTMLParser
-from threading import Lock
+from threading import Lock, Thread
+from collections import deque
 from io import BytesIO
+import html
 import json
 import os
 import re
@@ -19,6 +21,7 @@ COMMUNITY = 'https://steamcommunity.com'
 STEAMCMD_ZIP = 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip'
 DETAILS = 'https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/'
 DOWNLOAD_LOCK = Lock()
+DOWNLOAD_PROGRESS = {}
 STATIC = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
           '/style.css': ('style.css', 'text/css')}
 
@@ -114,6 +117,63 @@ def get_item(item_id):
         raise Problem(404, 'Steam не нашёл публичный предмет с таким ID.')
     return item
 
+
+
+class RequiredItems(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.depth = 0
+        self.link = None
+        self.title = []
+        self.items = {}
+
+    def handle_starttag(self, tag, attributes):
+        attrs = dict(attributes)
+        if tag == 'div' and (self.depth or attrs.get('id') == 'RequiredItems'
+                             or 'requiredItemsContainer' in (attrs.get('class') or '').split()):
+            self.depth += 1
+        if self.depth and tag == 'a':
+            url = urlsplit(attrs.get('href') or '')
+            if url.hostname == 'steamcommunity.com' and url.path in {
+                '/workshop/filedetails/', '/sharedfiles/filedetails/',
+            }:
+                item_id = parse_qs(url.query).get('id', [''])[0]
+                if re.fullmatch(r'[1-9][0-9]{0,19}', item_id):
+                    self.link = (item_id, f'{COMMUNITY}/sharedfiles/filedetails/?id={item_id}')
+            elif url.hostname == 'store.steampowered.com' and re.match(r'^/app/[0-9]+', url.path):
+                self.link = (None, 'https://store.steampowered.com' + url.path)
+            self.title = []
+
+    def handle_data(self, data):
+        if self.link:
+            self.title.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == 'div' and self.depth:
+            self.depth -= 1
+        if tag == 'a' and self.link:
+            item_id, url = self.link
+            self.items[url] = {'id': item_id, 'url': url, 'title': ' '.join(''.join(self.title).split())}
+            self.link = None
+
+
+def item_extras(item_id):
+    page = steam(f'{COMMUNITY}/sharedfiles/filedetails/?{urlencode({"id": identifier(item_id), "l": "english"})}')
+    markup = page.decode(errors='replace')
+    if 'highlightContent' not in markup:
+        raise Problem(502, 'Страница мода в Steam временно недоступна.')
+    required = RequiredItems()
+    required.feed(markup)
+    screenshots = re.search(r'var rgFullScreenshotURLs\s*=\s*\[(.*?)\];', markup, re.S)
+    movies = re.search(r'var rgMovieFlashvars\s*=\s*\{(.*?)\};', markup, re.S)
+    media = []
+    if movies:
+        ids = re.findall(r"""['"]?YOUTUBE_VIDEO_ID['"]?\s*:\s*['"]([a-zA-Z0-9_-]{11})['"]""", movies[1])
+        media.extend({'kind': 'youtube', 'id': movie} for movie in dict.fromkeys(ids))
+    if screenshots:
+        urls = re.findall(r"""['"]url['"]\s*:\s*['"](https://[^'"]+)['"]""", screenshots[1])
+        media.extend({'kind': 'image', 'url': html.unescape(url)} for url in dict.fromkeys(urls))
+    return {'media': media, 'requirements': list(required.items.values())}
 
 def portable_windows():
     return os.name == 'nt' and os.environ.get('WORKSHOP_DOCK_PORTABLE') == '1'
@@ -253,7 +313,46 @@ def workshop_folder(output, destination, executable, app, item_id):
     raise Problem(502, 'Steam подтвердил загрузку, но папка мода не найдена.')
 
 
+
+def run_steamcmd(command, executable, item_id, report):
+    output = deque(maxlen=80)
+
+    def read_output():
+        stage = 'preparing'
+        for line in process.stdout:
+            output.append(line)
+            if re.search(r'updat|installing', line, re.I) and stage == 'preparing':
+                stage = 'updating'
+                report(stage)
+            if stage != 'downloading' and re.search(rf'downloading\s+item\s+{item_id}\b', line, re.I):
+                stage = 'downloading'
+                report(stage)
+            match = re.search(r'(\d{1,3}(?:\.\d+)?)\s*%', line)
+            if match and stage in {'updating', 'downloading'}:
+                report(stage, min(100, float(match[1])))
+
+    with subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace',
+        cwd=executable.parent if portable_windows() else None,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+    ) as process:
+        reader = Thread(target=read_output, daemon=True)
+        reader.start()
+        try:
+            process.wait(timeout=900)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            reader.join(timeout=2)
+        return subprocess.CompletedProcess(command, process.returncode, ''.join(output.copy()))
+
 def download(item, archive, folder=None):
+    def report(stage, percent=None):
+        DOWNLOAD_PROGRESS[item['id']] = {'stage': stage, 'percent': percent}
+
+    report('preparing')
     executable = steamcmd_path(folder)
     app, item_id = identifier(item['app']), identifier(item['id'])
     temp_root = executable.parent if portable_windows() else None
@@ -266,12 +365,7 @@ def download(item, archive, folder=None):
         ]
         for attempt in range(2):
             try:
-                result = subprocess.run(
-                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                    errors='replace', timeout=900,
-                    cwd=executable.parent if os.environ.get('WORKSHOP_DOCK_PORTABLE') == '1' else None,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-                )
+                result = run_steamcmd(command, executable, item_id, report)
             except OSError as exc:
                 raise Problem(502, 'Не удалось запустить SteamCMD.', str(exc)) from exc
             except subprocess.TimeoutExpired as exc:
@@ -281,6 +375,7 @@ def download(item, archive, folder=None):
                 break
             if attempt or not re.search(r'Restarting SteamCMD|SteamCMD needs to restart', result.stdout, re.I):
                 raise steamcmd_failure(result.stdout, result.returncode)
+        report('packing')
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=3) as output:
             for path in source.rglob('*'):
                 if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(source):
@@ -342,6 +437,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({'enabled': enabled, 'folder': str(folder) if folder else None})
             elif address.path == '/api/browse':
                 self.json(browse(query))
+            elif address.path == '/api/item-extras':
+                self.json(item_extras(query.get('id', '')))
+            elif address.path == '/api/download-progress':
+                item_id = identifier(query.get('id', ''))
+                self.json(DOWNLOAD_PROGRESS.get(item_id, {}))
             elif address.path == '/api/item':
                 self.json(get_item(query.get('id', '')))
             else:
@@ -381,6 +481,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise Problem(502, 'Не удалось сохранить ZIP. Выберите доступную папку для загрузок.', str(exc)) from exc
                 with tempfile.TemporaryFile() as archive:
                     download(item, archive)
+                    DOWNLOAD_PROGRESS[item['id']] = {'stage': 'transferring'}
                     size = archive.tell()
                     archive.seek(0)
                     self.send_response(200)
@@ -390,6 +491,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     shutil.copyfileobj(archive, self.wfile)
             finally:
+                DOWNLOAD_PROGRESS.pop(item['id'], None)
                 DOWNLOAD_LOCK.release()
         except Problem as exc:
             payload = {'error': str(exc)}

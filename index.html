@@ -8,7 +8,7 @@
 <script defer src="/app.js"></script>
 </head>
 <body>
-<header><div class="wrap top"><a class="brand" href="/"><span aria-hidden="true">⬡</span> Workshop Dock</a><span class="source">Steam Workshop</span></div></header>
+<header><div class="wrap top"><a class="brand" href="/"><span aria-hidden="true">⬡</span> Workshop Dock</a><a id="queue-link" href="#download-queue" hidden>Очередь загрузок</a><span class="source">Steam Workshop</span></div></header>
 <main class="wrap">
 <section class="hero">
 <p class="label">КАТАЛОГ МОДИФИКАЦИЙ</p>
@@ -22,6 +22,11 @@
 </section>
 <section id="download-folder" aria-label="Настройки загрузки" hidden>
 <div class="row"><button id="choose-folder" class="secondary">Выбрать папку для ZIP</button><span id="folder-path" class="status" role="status"></span></div>
+</section>
+<section id="download-queue" aria-labelledby="queue-title" hidden>
+<h2 id="queue-title">Очередь загрузок</h2>
+<p id="queue-notice" class="status" role="status"></p>
+<ol id="queue-items"></ol>
 </section>
 <section class="catalog" aria-labelledby="catalog-title">
 <h2 id="catalog-title" tabindex="-1">Каталог</h2>
@@ -46,15 +51,23 @@
 </main>
 <dialog id="item-dialog">
 <div class="dialog-header"><h2 id="item-title"></h2><form method="dialog"><button class="secondary" aria-label="Закрыть">×</button></form></div>
-<img id="item-image" alt="">
+<section id="item-media" aria-label="Галерея мода" hidden>
+<div id="gallery-content"></div>
+<div id="gallery-controls" class="row" hidden>
+<button id="gallery-prev" class="secondary">Назад</button>
+<span id="gallery-position" class="meta" role="status"></span>
+<button id="gallery-next" class="secondary">Дальше</button>
+</div>
+</section>
+<p id="item-extras-status" class="status" role="status"></p>
 <p id="item-meta" class="meta"></p>
 <p id="item-description"></p>
+<section id="requirements" hidden>
+<h3>Зависимости</h3>
+<ul id="required-items"></ul>
+</section>
 <div class="row"><button id="download">Скачать</button><a class="secondary button" id="steam-page" target="_blank" rel="noopener noreferrer">Страница в Steam</a></div>
-<p id="download-status" class="status" role="status"></p>
-<details id="download-details" hidden>
-<summary>Сообщение SteamCMD</summary>
-<pre id="download-log"></pre>
-</details>
+<p id="item-download-notice" class="status" role="status"></p>
 </dialog>
 </body>
 </html>
