@@ -86,23 +86,25 @@ class WorkshopLinks(HTMLParser):
 
 
 def browse(query):
-    app = identifier(query.get('app', '294100'))
+    app = identifier(query.get('app', '233860'))
     raw_page = query.get('page', '1')
     if not re.fullmatch(r'[1-9][0-9]{0,3}', raw_page):
         raise Problem(400, 'Неверный номер страницы.')
-    sort = query.get('sort', 'trend')
-    if sort not in {'trend', 'mostrecent', 'totaluniquesubscribers'}:
+    sort = query.get('sort', 'toprated')
+    if sort not in {'toprated', 'trend', 'mostrecent', 'totaluniquesubscribers'}:
         raise Problem(400, 'Неизвестная сортировка.')
     params = {'appid': app, 'searchtext': query.get('q', '')[:120], 'browsesort': sort,
-              'section': 'readytouseitems', 'p': raw_page, 'numperpage': 18}
+              'section': 'readytouseitems', 'p': raw_page}
     parser = WorkshopLinks()
     html = steam(f'{COMMUNITY}/workshop/browse/?{urlencode(params)}').decode(errors='replace')
     parser.feed(html)
     page_count = re.search(r'total_pages\\?"\s*:\s*([0-9]+)', html)
+    if not page_count:
+        raise Problem(502, 'Steam не вернул число страниц. Попробуйте ещё раз.')
     ids = list(parser.ids)
     found = details(ids[:50]) if ids else {}
     return {'items': [found[item] for item in ids if item in found and found[item]['app'] == app],
-            'more': int(raw_page) < int(page_count[1]) if page_count else len(ids) >= 18}
+            'totalPages': int(page_count[1])}
 
 
 def get_item(item_id):

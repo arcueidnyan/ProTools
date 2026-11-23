@@ -21,17 +21,24 @@
 </form>
 </section>
 <section class="catalog" aria-labelledby="catalog-title">
-<h2 id="catalog-title">Каталог</h2>
+<h2 id="catalog-title" tabindex="-1">Каталог</h2>
 <form class="filters" id="filters">
-<label>Игра<select id="game"><option value="294100">RimWorld</option><option value="108600">Project Zomboid</option><option value="322330">Don't Starve Together</option><option value="4000">Garry’s Mod</option><option value="255710">Cities: Skylines</option><option value="286160">Tabletop Simulator</option><option value="custom">Другая игра</option></select></label>
+<label>Игра<select id="game"><option value="233860">Kenshi</option><option value="294100">RimWorld</option><option value="108600">Project Zomboid</option><option value="322330">Don't Starve Together</option><option value="4000">Garry’s Mod</option><option value="255710">Cities: Skylines</option><option value="286160">Tabletop Simulator</option><option value="custom">Другая игра</option></select></label>
 <label id="custom-label" hidden>Steam App ID<input id="custom" inputmode="numeric" pattern="[1-9][0-9]{0,9}" placeholder="App ID" disabled></label>
 <label class="search">Поиск по названию<input id="search" type="search" maxlength="120" placeholder="Поиск в мастерской"></label>
-<label>Сортировка<select id="sort"><option value="trend">Популярные сейчас</option><option value="mostrecent">Новые</option><option value="totaluniquesubscribers">По подписчикам</option></select></label>
+<label>Сортировка<select id="sort"><option value="toprated">Самые популярные за всё время</option><option value="trend">Популярные сейчас</option><option value="mostrecent">Новые</option><option value="totaluniquesubscribers">По подписчикам</option></select></label>
 <button>Найти</button>
 </form>
 <p id="catalog-status" class="status" role="status"></p>
 <div id="results" class="grid"></div>
-<nav id="pagination" aria-label="Страницы каталога" hidden><button id="prev" class="secondary">Назад</button><span id="page"></span><button id="next" class="secondary">Дальше</button></nav>
+<nav id="pagination" aria-label="Страницы каталога" hidden>
+<p id="page" role="status"></p>
+<div class="page-controls">
+<button id="prev" class="secondary">Назад</button>
+<div id="page-numbers" class="page-controls"></div>
+<button id="next" class="secondary">Дальше</button>
+</div>
+</nav>
 </section>
 </main>
 <dialog id="item-dialog">

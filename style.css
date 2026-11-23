@@ -57,7 +57,11 @@ h2 { margin: 0 0 12px; font-size: 1.7rem; letter-spacing: -.035em; }
 .card-body { padding: 13px; display: grid; gap: 5px; }
 .card-body strong { overflow-wrap: anywhere; }
 .meta { font-weight: 450; }
-nav { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 23px; }
+#pagination { margin-top: 23px; text-align: center; }
+#page { margin: 0 0 10px; color: var(--dim); }
+.page-controls { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+#page-numbers button { min-width: 44px; padding-inline: 8px; }
+#page-numbers [aria-current="page"] { background: var(--accent); color: #0b172b; cursor: default; }
 dialog { width: min(670px, calc(100% - 30px)); max-height: 90dvh; border: 1px solid var(--line); border-radius: 16px; padding: 22px; background: #101b2e; color: var(--ink); }
 dialog::backdrop { background: #030710cc; }
 .dialog-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }

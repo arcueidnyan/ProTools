@@ -43,13 +43,40 @@ function card(item) {
   return button
 }
 
-async function browse(target = 1) {
-  if (!$('filters').reportValidity()) return
+function renderPagination(totalPages) {
+  $('pagination').hidden = false
+  $('page').textContent = totalPages ? `Страница ${page} · Всего страниц: ${totalPages}` : 'Всего страниц: 0'
+  document.querySelector('#pagination > .page-controls').hidden = totalPages <= 1
+  $('prev').disabled = page <= 1
+  $('next').disabled = page >= totalPages
+
+  const count = Math.min(5, totalPages)
+  const start = Math.max(1, Math.min(page - 2, totalPages - count + 1))
+  const buttons = Array.from({length: count}, (_, index) => {
+    const number = start + index
+    const button = element('button', 'secondary', String(number))
+    button.setAttribute('aria-label', 'Страница ' + number)
+    if (number === page) button.setAttribute('aria-current', 'page')
+    else button.addEventListener('click', () => browse(number, true))
+    return button
+  })
+  $('page-numbers').replaceChildren(...buttons)
+}
+
+let activeFilters
+async function browse(target = 1, fromPagination = false) {
+  if (!fromPagination) {
+    if (!$('filters').reportValidity()) return
+    activeFilters = {
+      app: $('game').value === 'custom' ? $('custom').value : $('game').value,
+      sort: $('sort').value,
+      q: $('search').value.trim(),
+    }
+  }
   browseController?.abort()
   const controller = new AbortController()
   browseController = controller
-  const app = $('game').value === 'custom' ? $('custom').value : $('game').value
-  const query = new URLSearchParams({app, sort: $('sort').value, q: $('search').value.trim(), page: target})
+  const query = new URLSearchParams({...activeFilters, page: target})
   $('catalog-status').textContent = 'Загружаем каталог…'
   $('results').replaceChildren()
   $('pagination').hidden = true
@@ -59,10 +86,11 @@ async function browse(target = 1) {
     page = target
     $('results').replaceChildren(...payload.items.map(card))
     $('catalog-status').textContent = payload.items.length ? '' : 'Моды не найдены. Попробуйте другой запрос или App ID.'
-    $('pagination').hidden = !(page > 1 || payload.more)
-    $('prev').disabled = page <= 1
-    $('next').disabled = !payload.more
-    $('page').textContent = 'Страница ' + page
+    renderPagination(payload.totalPages)
+    if (fromPagination) {
+      $('catalog-title').focus({preventScroll: true})
+      $('catalog-title').scrollIntoView()
+    }
   } catch (error) {
     if (!controller.signal.aborted) $('catalog-status').textContent = error.message
   }
@@ -160,6 +188,6 @@ $('game').addEventListener('change', () => {
   else browse()
 })
 $('sort').addEventListener('change', () => browse())
-$('prev').addEventListener('click', () => browse(page - 1))
-$('next').addEventListener('click', () => browse(page + 1))
+$('prev').addEventListener('click', () => browse(page - 1, true))
+$('next').addEventListener('click', () => browse(page + 1, true))
 browse()
