@@ -9,7 +9,41 @@ const sizeField = byId('item-size')
 const fonts = ['Manrope', 'Golos Text', 'PT Serif', 'Comfortaa', 'IBM Plex Mono']
 const palette = { violet: 'Сиреневый', green: 'Зелёный', peach: 'Персиковый', blue: 'Голубой', white: 'Белый' }
 const labels = { note: 'Стикер', text: 'Текст', rect: 'Прямоугольник', ellipse: 'Овал' }
+const gridStep = 24
 const shortcuts = { KeyV: 'select', KeyH: 'pan', KeyN: 'note', KeyT: 'text', KeyR: 'rect', KeyO: 'ellipse' }
+
+const viewOptions = { grid: true, snapGrid: false, snapItems: true }
+const viewOptionsKey = 'pole.viewOptions'
+try {
+  const saved = JSON.parse(localStorage.getItem(viewOptionsKey))
+  for (const key of Object.keys(viewOptions)) {
+    if (typeof saved?.[key] === 'boolean') viewOptions[key] = saved[key]
+  }
+} catch {
+  // The controls still work when the browser blocks storage.
+}
+viewport.dataset.grid = String(viewOptions.grid)
+for (const input of document.querySelectorAll('[data-view-option]')) {
+  const key = input.dataset.viewOption
+  input.checked = viewOptions[key]
+  input.onchange = () => {
+    viewOptions[key] = input.checked
+    viewport.dataset.grid = String(viewOptions.grid)
+    if (!viewOptions.snapItems) showGuides()
+    try { localStorage.setItem(viewOptionsKey, JSON.stringify(viewOptions)) } catch {}
+  }
+}
+const viewMenu = byId('view-options')
+document.addEventListener('pointerdown', event => {
+  if (!viewMenu.contains(event.target)) viewMenu.open = false
+})
+viewMenu.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && viewMenu.open) {
+    event.stopPropagation()
+    viewMenu.open = false
+    viewMenu.querySelector('summary').focus()
+  }
+})
 
 let list = []
 let board
@@ -161,6 +195,7 @@ function activate(value) {
   dirty = false
   selected = undefined
   drag = undefined
+  showGuides()
   history = []
   future = []
   title.value = board?.title || ''
@@ -348,7 +383,7 @@ byId('redo').onclick = () => undo(true)
 function updateCamera() {
   const { x, y, k } = camera
   world.style.transform = 'translate(' + x + 'px, ' + y + 'px) scale(' + k + ')'
-  viewport.style.backgroundSize = 24 * k + 'px ' + 24 * k + 'px'
+  viewport.style.backgroundSize = gridStep * k + 'px ' + gridStep * k + 'px'
   viewport.style.backgroundPosition = x + 'px ' + y + 'px'
   byId('zoom-reset').textContent = Math.round(k * 100) + '%'
 }
@@ -395,13 +430,44 @@ viewport.addEventListener('wheel', event => {
   }
 }, { passive: false })
 const coordinate = value => Math.min(1e7, Math.max(-1e7, value))
+const dimension = value => Math.max(28, Math.min(5000, value))
+const snapGrid = value => viewOptions.snapGrid ? Math.round(value / gridStep) * gridStep : value
+
+function snapAxis(position, offsets, axis, extent, value) {
+  if (!viewOptions.snapItems) return { position: snapGrid(position) }
+  let best
+  let distance = 7 / camera.k
+  for (const other of board.items) {
+    if (other.id === value.id) continue
+    const start = other[axis]
+    const size = other[extent]
+    for (const guide of [start, start + size / 2, start + size]) {
+      for (const offset of offsets) {
+        const candidate = guide - offset
+        if (Math.abs(candidate - position) < distance) {
+          distance = Math.abs(candidate - position)
+          best = { position: candidate, guide }
+        }
+      }
+    }
+  }
+  return best ?? { position: snapGrid(position) }
+}
+function showGuides(x, y) {
+  const vertical = byId('guide-x')
+  const horizontal = byId('guide-y')
+  vertical.hidden = x === undefined
+  horizontal.hidden = y === undefined
+  if (!vertical.hidden) vertical.style.left = camera.x + x * camera.k + 'px'
+  if (!horizontal.hidden) horizontal.style.top = camera.y + y * camera.k + 'px'
+}
 function addAt(event) {
   const rect = viewport.getBoundingClientRect()
   const kind = tool
   const value = {
     id: globalThis.crypto?.randomUUID?.() || 'item-' + Date.now() + '-' + Math.random().toString(36).slice(2),
-    kind, x: coordinate((event.clientX - rect.left - camera.x) / camera.k),
-    y: coordinate((event.clientY - rect.top - camera.y) / camera.k),
+    kind, x: coordinate(snapGrid((event.clientX - rect.left - camera.x) / camera.k)),
+    y: coordinate(snapGrid((event.clientY - rect.top - camera.y) / camera.k)),
     w: kind === 'text' ? 250 : 200, h: kind === 'text' ? 75 : kind === 'note' ? 170 : 115,
     font: 'Manrope', size: kind === 'text' ? 26 : 19, color: kind === 'note' ? 'violet' : 'blue',
     text: ''
@@ -446,15 +512,26 @@ viewport.onpointermove = event => {
     camera.x = drag.x + dx
     camera.y = drag.y + dy
     updateCamera()
-  } else if (drag.resize) {
-    const value = item()
-    value.w = Math.max(28, Math.min(5000, drag.w + dx / camera.k))
-    value.h = Math.max(28, Math.min(5000, drag.h + dy / camera.k))
-    drawItem(world.querySelector('.selected'), value)
   } else {
     const value = item()
-    value.x = coordinate(drag.x + dx / camera.k)
-    value.y = coordinate(drag.y + dy / camera.k)
+    const x = drag.x + dx / camera.k
+    const y = drag.y + dy / camera.k
+    let sx, sy
+    if (drag.resize) {
+      sx = snapAxis(drag.x + dimension(drag.w + dx / camera.k), [0], 'x', 'w', value)
+      sy = snapAxis(drag.y + dimension(drag.h + dy / camera.k), [0], 'y', 'h', value)
+      value.w = dimension(sx.position - drag.x)
+      value.h = dimension(sy.position - drag.y)
+      showGuides(value.w === sx.position - drag.x ? sx.guide : undefined,
+        value.h === sy.position - drag.y ? sy.guide : undefined)
+    } else {
+      sx = snapAxis(x, [0, value.w / 2, value.w], 'x', 'w', value)
+      sy = snapAxis(y, [0, value.h / 2, value.h], 'y', 'h', value)
+      value.x = coordinate(sx.position)
+      value.y = coordinate(sy.position)
+      showGuides(value.x === sx.position ? sx.guide : undefined,
+        value.y === sy.position ? sy.guide : undefined)
+    }
     drawItem(world.querySelector('.selected'), value)
   }
 }
@@ -462,6 +539,7 @@ function endDrag(event) {
   if (drag?.id !== event.pointerId) return
   if (drag.itemChanged) changed()
   viewport.classList.remove('dragging')
+  showGuides()
   drag = undefined
 }
 window.addEventListener('pointerup', endDrag)

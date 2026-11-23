@@ -30,6 +30,8 @@
     </header>
     <section id="viewport" aria-label="Рабочая область доски">
       <div id="world"></div>
+      <div id="guide-x" class="guide" aria-hidden="true" hidden></div>
+      <div id="guide-y" class="guide" aria-hidden="true" hidden></div>
       <div id="empty"><h2>Ваши идеи начинаются здесь</h2><p>Создайте доску, чтобы добавить первые заметки.</p><button id="empty-create" class="primary">Создать доску</button></div>
     </section>
     <div class="tools panel" id="tools" role="toolbar" aria-label="Инструменты" hidden>
@@ -56,6 +58,15 @@
     </aside>
     <div id="canvas-hint" hidden>Пробел и перетаскивание — переместить холст</div>
     <div id="zoom" class="panel" aria-label="Масштаб" hidden>
+      <details id="view-options">
+        <summary class="icon" aria-label="Настройки холста" title="Настройки холста">⚙</summary>
+        <div class="panel view-options-menu">
+          <label><input type="checkbox" data-view-option="grid"> Показывать сетку</label>
+          <label><input type="checkbox" data-view-option="snapGrid"> Привязка к сетке</label>
+          <label><input type="checkbox" data-view-option="snapItems"> Выравнивание по объектам</label>
+        </div>
+      </details>
+      <span class="separator"></span>
       <button id="zoom-out" class="icon" aria-label="Уменьшить">−</button><button id="zoom-reset" title="Вернуть 100%">100%</button><button id="zoom-in" class="icon" aria-label="Увеличить">＋</button><span class="separator"></span><button id="fit" class="icon" aria-label="Показать всю доску" title="Показать всю доску">⛶</button>
     </div>
   </main>
