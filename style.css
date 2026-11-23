@@ -69,3 +69,5 @@ dialog::backdrop { background: #030710cc; }
 #item-image { width: 100%; max-height: 330px; display: block; object-fit: contain; border-radius: 10px; background: #0b1221; }
 #item-description { white-space: pre-wrap; max-height: 27vh; overflow-y: auto; }
 @media (max-width: 480px) { .wrap { width: calc(100% - 24px); } .source { display: none; } }
+
+#download-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22vh; overflow: auto; }

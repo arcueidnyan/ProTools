@@ -24,8 +24,9 @@ STATIC = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascri
 
 
 class Problem(Exception):
-    def __init__(self, status, message):
+    def __init__(self, status, message, details=None):
         self.status = status
+        self.details = details
         super().__init__(message)
 
 
@@ -140,34 +141,67 @@ def steamcmd_path():
     return executable
 
 
+def steamcmd_failure(output, returncode):
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    details = f'Код завершения: {returncode}\n' + '\n'.join(lines[-12:])
+    if re.search(r'No subscription|Access Denied|Insufficient Privilege', output, re.I):
+        message = 'Steam отказал в доступе. Для этого мода может требоваться аккаунт или лицензия.'
+    elif re.search(r'No Connection|must be online|needs to be online|Could not connect|Connection failed|Timeout', output, re.I):
+        message = 'SteamCMD не смог подключиться к Steam. Проверьте соединение и повторите загрузку.'
+    elif re.search(r'failed to download item|download item .* failed', output, re.I):
+        message = 'Steam отклонил загрузку мода в анонимном режиме.'
+    else:
+        message = 'SteamCMD завершился без подтверждения загрузки.'
+    return Problem(502, message, details[-3000:])
+
+
+def workshop_folder(output, destination, executable, app, item_id):
+    match = re.search(
+        rf'Success\.\s+Downloaded item {item_id}\s+to\s+([^\r\n]+)', output, re.I,
+    )
+    if not match:
+        return None
+    tail = ('workshop', 'content', app, item_id)
+    reported = re.match(r'"([^"]+)"|(.+?)(?:\s*\(\s*\d+\s+bytes?\s*\))?$', match[1].strip())
+    candidates = []
+    if reported:
+        folder = Path(reported[1] or reported[2])
+        candidates.extend(root / folder for root in (destination, executable.parent, Path.cwd()))
+    candidates.extend(root.joinpath('steamapps', *tail) for root in (destination, executable.parent))
+    for candidate in candidates:
+        source = candidate.resolve()
+        if source.parts[-4:] == tail and source.is_dir():
+            return source
+    raise Problem(502, 'Steam подтвердил загрузку, но папка мода не найдена.')
+
+
 def download(item, archive):
     executable = steamcmd_path()
-    app, item_id = identifier(item['app']), item['id']
+    app, item_id = identifier(item['app']), identifier(item['id'])
     with tempfile.TemporaryDirectory(prefix='workshop-dock-') as directory:
         destination = Path(directory)
-        try:
-            result = subprocess.run(
-                [str(executable), '+@ShutdownOnFailedCommand', '1', '+@NoPromptForPassword', '1',
-                 '+force_install_dir', directory, '+login', 'anonymous',
-                 '+workshop_download_item', app, item_id, 'validate', '+quit'],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', timeout=900,
-                cwd=executable.parent if os.environ.get('WORKSHOP_DOCK_PORTABLE') == '1' else None,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            )
-        except OSError as exc:
-            raise Problem(502, 'Не удалось запустить SteamCMD.') from exc
-        except subprocess.TimeoutExpired as exc:
-            raise Problem(504, 'SteamCMD не завершил загрузку за 15 минут.') from exc
-        match = re.search(r'Success\. Downloaded item ' + item_id + r' to "([^"\r\n]+)"', result.stdout)
-        if not match:
-            print(result.stdout[-2500:], flush=True)
-            if re.search(r'Failure|Access Denied|No subscription|Not Logged On', result.stdout, re.I):
-                raise Problem(502, 'SteamCMD отклонил загрузку. Эта игра может требовать аккаунт или лицензию.')
-            raise Problem(502, 'SteamCMD не подтвердил загрузку. Подробности в консоли сервера.')
-        raw_path = Path(match[1])
-        source = (raw_path if raw_path.is_absolute() else destination / raw_path).resolve()
-        if source.parts[-4:] != ('workshop', 'content', app, item_id) or not source.is_dir():
-            raise Problem(502, 'Папка скачанного мода не найдена.')
+        command = [
+            str(executable), '+@ShutdownOnFailedCommand', '1', '+@NoPromptForPassword', '1',
+            '+force_install_dir', directory, '+login', 'anonymous',
+            '+workshop_download_item', app, item_id, 'validate', '+quit',
+        ]
+        for attempt in range(2):
+            try:
+                result = subprocess.run(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    errors='replace', timeout=900,
+                    cwd=executable.parent if os.environ.get('WORKSHOP_DOCK_PORTABLE') == '1' else None,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                )
+            except OSError as exc:
+                raise Problem(502, 'Не удалось запустить SteamCMD.', str(exc)) from exc
+            except subprocess.TimeoutExpired as exc:
+                raise Problem(504, 'SteamCMD не завершил загрузку за 15 минут.') from exc
+            source = workshop_folder(result.stdout, destination, executable, app, item_id)
+            if source:
+                break
+            if attempt or not re.search(r'Restarting SteamCMD|SteamCMD needs to restart', result.stdout, re.I):
+                raise steamcmd_failure(result.stdout, result.returncode)
         with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=3) as output:
             for path in source.rglob('*'):
                 if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(source):
@@ -233,7 +267,10 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 DOWNLOAD_LOCK.release()
         except Problem as exc:
-            self.json({'error': str(exc)}, exc.status)
+            payload = {'error': str(exc)}
+            if exc.details:
+                payload['details'] = exc.details
+            self.json(payload, exc.status)
         except (BrokenPipeError, ConnectionResetError):
             pass
 

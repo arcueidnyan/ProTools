@@ -7,7 +7,12 @@ let currentItem
 
 async function api(path, options) {
   const response = await fetch(path, options)
-  if (!response.ok) throw new Error((await response.json()).error)
+  if (!response.ok) {
+    const payload = await response.json()
+    const error = new Error(payload.error)
+    error.details = payload.details
+    throw error
+  }
   return response
 }
 
@@ -110,6 +115,7 @@ function workshopId(value) {
 
 function openItem(item) {
   currentItem = item
+  $('download-details').hidden = true
   $('item-title').textContent = item.title
   $('item-image').hidden = !item.image
   if (item.image) $('item-image').src = item.image
@@ -153,6 +159,8 @@ $('download').addEventListener('click', async () => {
     return
   }
   downloadBusy = true
+  $('download-details').hidden = true
+  $('download-details').open = false
   $('download').disabled = true
   $('download-status').textContent = 'SteamCMD скачивает мод и собирает ZIP…'
   let message
@@ -172,6 +180,10 @@ $('download').addEventListener('click', async () => {
     }
   } catch (error) {
     message = error.message
+    if (currentItem.id === item.id && error.details) {
+      $('download-log').textContent = error.details
+      $('download-details').hidden = false
+    }
   } finally {
     downloadBusy = false
     $('download').disabled = false
