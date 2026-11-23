@@ -167,8 +167,13 @@ $('download').addEventListener('click', async () => {
   try {
     const response = await api('/api/download?id=' + item.id, {method: 'POST'})
     if (response.headers.get('content-type').startsWith('application/json')) {
-      window.location.assign((await response.json()).url)
-      message = 'Открываем ссылку на файл Steam.'
+      const payload = await response.json()
+      if (payload.saved) {
+        message = 'ZIP сохранён: ' + payload.saved
+      } else {
+        window.location.assign(payload.url)
+        message = 'Открываем ссылку на файл Steam.'
+      }
     } else {
       const url = URL.createObjectURL(await response.blob())
       const link = element('a', '')
@@ -203,3 +208,31 @@ $('sort').addEventListener('change', () => browse())
 $('prev').addEventListener('click', () => browse(page - 1, true))
 $('next').addEventListener('click', () => browse(page + 1, true))
 browse()
+
+
+function showDownloadFolder(folder) {
+  $('folder-path').textContent = folder || 'Выберите папку без кириллицы в полном пути, например C:\\Mods.'
+}
+
+$('choose-folder').addEventListener('click', async () => {
+  const button = $('choose-folder')
+  button.disabled = true
+  const previous = $('folder-path').textContent
+  $('folder-path').textContent = 'Выберите папку в открывшемся окне Windows…'
+  try {
+    const payload = await (await api('/api/download-folder', {method: 'POST'})).json()
+    showDownloadFolder(payload.folder)
+  } catch (error) {
+    $('folder-path').textContent = previous + ' · ' + error.message
+  } finally {
+    button.disabled = false
+  }
+})
+
+api('/api/download-folder')
+  .then(response => response.json())
+  .then(({enabled, folder}) => {
+    $('download-folder').hidden = !enabled
+    showDownloadFolder(folder)
+  })
+  .catch(() => {})

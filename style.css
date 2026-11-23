@@ -71,3 +71,6 @@ dialog::backdrop { background: #030710cc; }
 @media (max-width: 480px) { .wrap { width: calc(100% - 24px); } .source { display: none; } }
 
 #download-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22vh; overflow: auto; }
+
+#download-folder { margin-top: 20px; }
+#folder-path { overflow-wrap: anywhere; }
